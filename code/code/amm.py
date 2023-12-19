@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+#%% -*- coding: utf-8 -*-
 """
 Created on Fri Nov  21 17:26:27 2023
 
@@ -65,15 +65,13 @@ class amm():
 
         """
 
-        y = np.zeros(len(x))  # Initialize y array
-        for i in range(len(x)):
-            # Calculate the amount of token-Y received, following the constant product formula
-            y[i] = self.Ry[i] * (1 - (self.Rx[i] / (self.Rx[i] + x[i] * (1 - self.phi[i]))))
+        # Compute the amount of token-Y you receive from each pool
+        y = x*self.Ry*(1-self.phi) / (self.Rx + x*(1-self.phi))
 
-            # Update pool states if quote is False
-            if not quote:
-                self.Rx[i] += x[i]
-                self.Ry[i] -= y[i]
+        # If quote is False, then update the pool states
+        if quote is False:
+            self.Rx += x
+            self.Ry -= y
 
         return y
 
@@ -97,15 +95,13 @@ class amm():
 
         """
 
-        x = np.zeros(len(y))  # Initialize x array
-        for i in range(len(y)):
-            # Calculate the amount of token-X received, following the constant product formula
-            x[i] = self.Rx[i] * (1 - (self.Ry[i] / (self.Ry[i] + y[i] * (1 - self.phi[i]))))
+        # Compute the amount of token-X you receive from each pool
+        x = y*self.Rx*(1-self.phi) / (self.Ry + y*(1-self.phi))
 
-            # Update pool states if quote is False
-            if not quote:
-                self.Ry[i] += y[i]
-                self.Rx[i] -= x[i]
+        # If quote is False, then update the pool states
+        if quote is False:
+            self.Rx -= x
+            self.Ry += y
 
         return x
 
@@ -127,18 +123,17 @@ class amm():
 
         """
 
-        l = np.zeros(len(x))  # Initialize l array
-        for i in range(len(x)):
-            # Check if the LP trading condition is satisfied
-            assert np.isclose(x[i] / self.Rx[i], y[i] / self.Ry[i]), f"Pool {i} has incorrect submission of coins"
+        for k in range(len(self.Rx)):
+            assert np.abs(((x[k]/y[k])-self.Rx[k]/self.Ry[k])) < 1e-9, "pool " + str(k) + " has incorrect submission of tokens"
 
-            # Calculate the number of LP coins received
-            l[i] = (x[i] * y[i]) / (self.Rx[i] * self.L[i])
-
-            # Update the reserves and outstanding LP coins
-            self.Rx[i] += x[i]
-            self.Ry[i] += y[i]
-            self.L[i] += l[i]
+        # Compute the amount of LP tokens you receive from each pool
+        l = x*self.L/self.Rx
+            
+        # Update the pool states
+        self.Rx += x
+        self.Ry += y
+        self.L += l
+        self.l += + l
 
         return l
 
@@ -159,30 +154,14 @@ class amm():
 
         """
         
-        l = np.zeros(len(x))  # Initialize l array
-        for i in range(len(x)):
-            # Calculate the fraction theta to swap, following Equation 9
-            phi = self.phi[i]  # Pool's fee rate
-            RX = self.Rx[i]   # Pool's reserve of coin-X
-            x_tilde = x[i]
+        # Compute the percentage to swap in each pool
+        x = np.array(x, float)
+        theta = 1 + (2 - self.phi)*self.Rx*(1 - np.sqrt(
+            1+4*x*(1-self.phi)/(self.Rx*(2-self.phi)**2)
+            )) / ( 2*(1 - self.phi)*x )
 
-            # Equation 9 from the document to calculate theta
-            numerator = (2 - phi) * RX * x_tilde * (1 - phi)
-            denominator = 2 * (1 - phi) * x_tilde * (1 - 1 + 4 * RX * (2 - phi)**2)
-            theta = 1 + numerator / denominator
-
-            # Calculate the amount of coin-X to swap
-            x_swap = (1 - theta) * x_tilde
-
-            # Perform the swap
-            y_received = self.swap_x_to_y(np.array([x_swap]))[i]
-
-            # Use the remaining coin-X and the received coin-Y to mint LP coins
-            l[i] = self.mint(np.array([theta * x_tilde]), np.array([y_received]))[i]
-
-        return l
-
-
+        return self.mint(x*theta, self.swap_x_to_y(x*(1-theta), quote=False))
+    
     def burn_and_swap(self, l):
         """
         a method that burns your LP tokens, then swaps y to x and returns only x
@@ -199,10 +178,14 @@ class amm():
 
         """
         
-        # ********************
-        #     fill in code
-        # ********************
-
+        x, y = self.burn(l)
+        # Request quote
+        quote = self.swap_y_to_x([y.sum()]*self.N, quote=True)
+        # Assign y to the pool with the highest quote
+        to_swap = np.zeros_like(quote)
+        to_swap[np.argmax(quote)] = y.sum()
+        # Swap coin
+        total_x = (x + self.swap_y_to_x(to_swap, quote=False)).sum() #Swap coin
         return total_x
 
     def burn(self, l):
@@ -226,9 +209,15 @@ class amm():
         for k in range(len(self.L)):
             assert l[k] <= self.l[k], "you have insufficient LP tokens"
 
-        # ********************
-        #     fill in code
-        # ********************
+        # Compute the amount of token-X and token-Y you receive from each pool
+        x = l*self.Rx/self.L
+        y = l*self.Ry/self.L
+
+        # Update the pool states
+        self.Rx -= x
+        self.Ry -= y
+        self.L -= l
+        self.l -= l
         
         return x, y
 
@@ -349,3 +338,49 @@ class amm():
             event_direction_t[k] = event_direction
 
         return pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t
+
+#%% Example of how to use the class
+
+if __name__ == "__main__":
+    Rx0 = np.array([100, 100, 100], float)
+    Ry0 = np.array([1000, 1000, 1000], float)
+    phi = np.array([0.003, 0.003, 0.003], float)
+
+    pools = amm(Rx=Rx0, Ry=Ry0, phi=phi)
+    print ('Available LP coins :', np.round(pools.L, 3))
+    print('\n')
+
+    y = pools.swap_x_to_y([1, 0.5, 0.1], quote=False)
+    print('Obtained Y coins :', np.round(y, 2))
+    print('Reserves in X :', np.round(pools.Rx, 2))
+    print('Reserves in Y :', np.round(pools.Ry, 2))
+    print('\n')
+
+    x = [1, 1, 1]
+    #l = pools.mint(x=x, y=np.random.rand(3))
+    y = x*pools.Ry / pools.Rx
+    l = pools.mint(x=x, y=y)
+    print('Traded LP coins :', np.round(pools.l, 2))
+    print('Pool LP coins :', np.round(pools.L, 2))
+    print('\n')
+
+    #x, y = pools.burn(l+1)
+    x, y = pools.burn(l)
+    print('Trader LP coins :', np.round(pools.l, 2))
+    print('Trader X coins :', np.round(x, 2))
+    print('Trader Y coins :', np.round(y, 2))
+    print('Pool LP coins :', np.round(pools.L, 2))
+    print('\n')
+
+    l = pools.swap_and_mint([10, 10, 10])
+    print('Minted LP coins :', np.round(l, 2))
+    print('Total trader LP coins :', np.round(pools.l, 2))
+    print('Available LP coins :', np.round(pools.L, 2))
+    print('\n')
+
+    total_x = pools.burn_and_swap(l)
+    print('Number of X coins received :', np.round(total_x, 2))
+    print('Total trader liquidity coins :', np.round(pools.l, 2))
+    print('Available liquidity coins :', np.round(pools.L, 2))
+
+# %%
