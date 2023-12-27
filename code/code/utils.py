@@ -18,6 +18,11 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 from amm import amm
 from params import params
+import logging
+import os
+
+os.remove('output.log')
+logging.basicConfig(filename=f'output.log', format='%(message)s', level=logging.INFO)
 
 def calculate_cvar(log_returns, alpha=0.95):
     """
@@ -37,35 +42,38 @@ def calculate_log_returns(initial_pools_dist, final_pools_dists, l):
     """
 
     batch_size = len(final_pools_dists) # number of simulated paths
-    x_T = np.zeros(batch_size) # each element of x_T is the final wealth of a path
+    x_T = np.zeros(batch_size) # each element of x_T will be the final wealth of a path
 
     # In order to have the final wealth, we need to burn and swap the LP tokens
     # for each path. This is done by the burn_and_swap method of the amm class.
+    # The method takes all the LP tokens, burn them and swap coin-Y for coin-X.
     for k in range(batch_size):
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
 
+    # Calculate the initial wealth
     x_0 = np.sum(initial_pools_dist)
-    log_returns = np.log(x_T) - np.log(x_0)
-    return log_returns#, mean_log_return, std_log_return
 
-def objective_function(initial_pools_dist, params):
+    # Calculate the log returns for each path
+    log_returns = np.log(x_T) - np.log(x_0)
+
+    return log_returns
+
+def objective_function(initial_pools_dist, amm_instance, params):
     """
     Objective function to minimize. It takes as input the initial wealth distribution
-    and the parameters of the model, togerher with the amm class instance. 
-    It returns the CVaR of the final return distribution.
+    ,the parameters of the model and the instance of the amm class. 
+    It returns the CVaR of the final return distribution. Additionally, it evaluates
+    the log returns and the probability of having a return greater than 0.05. It set these
+    variables as global so that 'probability' can be used in the constraint_3 function and
+    'log_returns' can be used to plot the distribution of returns for the best initial wealth
+    distribution.
     """
 
     # Extract the parameters from the dictionary params
-    N = params['N_pools']
-    phi = params['phi']
     kappa, p, sigma = params['kappa'], params['p'], params['sigma']
     T = params['T']
     batch_size = params['batch_size']
 
-    # Initialize the pools
-    Rx0 = initial_pools_dist[:N]
-    Ry0 = initial_pools_dist[N:]
-    amm_instance = amm(Rx0, Ry0, phi)
     # Evaluate the number of LP tokens
     l = amm_instance.swap_and_mint(initial_pools_dist)
 
@@ -74,23 +82,23 @@ def objective_function(initial_pools_dist, params):
     # the final reserves of the pools for a given path. To access the final X reserve of
     # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
     final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(kappa=kappa, p=p, sigma=sigma, T=T, batch_size=batch_size)
+
+    # Calculate the log returns for each path
+    global log_returns
     log_returns = calculate_log_returns(initial_pools_dist, final_pools_dists, l)
 
-    # Check if return exceeds 0.05
-    # this pieace of code can be improved using masks
-    count_success = 0
-    for log_return in log_returns:
-        if log_return > 0.05:
-            count_success += 1
-
+    # Compute the probability of having a return greater than 0.05
     global probability
-    probability = count_success / batch_size
+    probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
+    # Calculate the CVaR of the final return distribution
     cvar = calculate_cvar(log_returns)
-    return cvar
+    print(cvar)
+
+    return -cvar
 
 def constraint_1(x):
-    return np.sum(x) - 1
+    return np.sum(x) - 60
 
 def constraint_2(x):
     return x
@@ -99,9 +107,10 @@ def constraint_3(x):
     global probability
     return probability - 0.7
 
-def optimize_distribution(amm_instance, params):
+def optimize_distribution(params):
     """
-    Optimizes the distribution of wealth across liquidity pools to minimize CVaR.
+    Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
+    conditioned to P[final return > 0.05]>0.7.
 
     Args:
     - amm_instance (amm): Instance of the amm class.
@@ -110,21 +119,85 @@ def optimize_distribution(amm_instance, params):
     Returns:
     - dict: Optimal weights and corresponding CVaR.
     """
-    # Constraints for optimization
+
+    # Global variables to store the log returns and the
+    # probability of having a return greater than 0.05
+    global probability
+    global log_returns
+    log_returns = 0
+    probability = 0
+
+    # Constraints
     constraints = [{'type': 'eq', 'fun': constraint_1},
                    {'type': 'ineq', 'fun': constraint_2},
                    {'type': 'ineq', 'fun': constraint_3}]
+    
+    # Callback function to print the current CVaR and the current parameters
+    def callback_function(x):
+        current_cvar = objective_function(x, amm_instance, params)
+        logging.info(f"Current parameters: {x}")
+        logging.info(f"Current CVaR: {current_cvar}")
 
     # Initial guess (even distribution across pools)
-    initial_pools_dist = np.ones(params['N_pools'])*params['x_0']
+    initial_pools_dist = np.ones(params['N_pools']) * params['x_0']
+    # rand = np.random.uniform(0, 100, params['N_pools'])
+    # initial_pools_dist = rand / np.sum(rand) * 60
+    logging.info(f"Initial pools distribution:\n\t{initial_pools_dist}")
 
-    # Optimization
-    result = minimize(objective_function, initial_pools_dist, args=(params),
-                      method='SLSQP', constraints=constraints)
+    # Instantiate the amm class
+    amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
 
-    # Return the optimal weights and corresponding CVaR
-    optimal_weights = result.x
-    optimal_cvar = objective_function(optimal_weights, amm_instance, params)
+    # Optimization procedure
+    result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
+                      method='SLSQP', constraints=constraints, callback=callback_function)
 
-    return {'weights': optimal_weights, 'cvar': optimal_cvar}
+    logging.info(f"Results:\n\t{result}")
+    print(result)
 
+    return result.x
+
+def simulation_plots(x_0, params):
+    """
+    Plots the evolution of the reserves, the price and the returns for a given
+    initial distribution of wealth across pools.
+    """
+
+    # Initialize the pools
+    amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
+    # Evaluate the number of LP tokens
+    l = amm_instance.swap_and_mint(x_0)
+
+    # Simulate the evolution of the pools.
+    # final_pools_dist is a list of length batch_size. Each element of the list contains 
+    # the final reserves of the pools for a given path. To access the final X reserve of
+    # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
+    x_T, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=1000)
+    log_returns = calculate_log_returns(x_0, x_T, l)
+    cvar = calculate_cvar(log_returns)
+
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
+    i = np.random.randint(0, params['N_pools'])
+    # Plot the evolution of the reserves
+    ax[0].plot(Rx_t[i])
+    ax[0].set_xlabel('Time')
+    ax[0].set_ylabel('X-Reserves')
+
+    ax[1].plot(Ry_t[i])
+    ax[1].set_xlabel('Time')
+    ax[1].set_ylabel('Y-Reserves')
+
+    # Plot the evolution of the marginal price
+    ax[2].plot(np.array(Rx_t[i])/np.array(Ry_t[i]))
+    ax[2].set_xlabel('Time')
+    ax[2].set_ylabel('Marginal Price')
+
+    # Plot the distribution of the returns
+    plt.figure(figsize=(10, 8), tight_layout=True)
+    plt.hist(log_returns, bins=50)
+    plt.axvline(cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
+    plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$')
+    plt.xlabel('Time')
+    plt.ylabel('Returns')
+    plt.legend()
+
+    plt.show()
