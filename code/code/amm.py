@@ -137,7 +137,7 @@ class amm():
 
         return l
 
-    def swap_and_mint(self, x):
+    def swap_and_mint(self, x, quote=False):
         """
         a method that determines the correct amount of y for each x within the corresponding pool
         to swap and then mint tokens with the reamaing x and the y you received
@@ -146,7 +146,10 @@ class amm():
         ----------
         x : array (K,)
             amount of token-X you have for each pool.
-
+        quote: bool, optional
+            deafult is False.
+            If False, then pool states are updated.
+            If True, pool states are not updated.
         Returns
         -------
         l : array (K,)
