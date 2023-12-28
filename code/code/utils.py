@@ -33,7 +33,7 @@ def calculate_cvar(log_returns, alpha=0.95):
     cvar = np.mean(-log_returns[-log_returns >= quantile])
     return cvar
 
-def calculate_log_returns(initial_pools_dist, final_pools_dists, l):
+def calculate_log_returns(x0, final_pools_dists, l):
     """
     In the simulate method of the amm class, a  certain number of trading paths are
     generated. Consequently, for each path we have a final log return.
@@ -51,7 +51,7 @@ def calculate_log_returns(initial_pools_dist, final_pools_dists, l):
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
 
     # Calculate the initial wealth
-    x_0 = np.sum(initial_pools_dist)
+    x_0 = np.sum(x0)
 
     # Calculate the log returns for each path
     log_returns = np.log(x_T) - np.log(x_0)
@@ -73,19 +73,21 @@ def objective_function(initial_pools_dist, amm_instance, params):
     kappa, p, sigma = params['kappa'], params['p'], params['sigma']
     T = params['T']
     batch_size = params['batch_size']
+    x0 = params['x_0'] * initial_pools_dist
 
     # Evaluate the number of LP tokens
-    l = amm_instance.swap_and_mint(initial_pools_dist)
+    l = amm_instance.swap_and_mint(x0)
 
     # Simulate the evolution of the pools.
     # final_pools_dist is a list of length batch_size. Each element of the list contains 
     # the final reserves of the pools for a given path. To access the final X reserve of
     # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
-    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(kappa=kappa, p=p, sigma=sigma, T=T, batch_size=batch_size)
+    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
+        kappa=kappa, p=p, sigma=sigma, T=T, batch_size=batch_size)
 
     # Calculate the log returns for each path
     global log_returns
-    log_returns = calculate_log_returns(initial_pools_dist, final_pools_dists, l)
+    log_returns = calculate_log_returns(x0, final_pools_dists, l)
 
     # Compute the probability of having a return greater than 0.05
     global probability
@@ -93,12 +95,11 @@ def objective_function(initial_pools_dist, amm_instance, params):
 
     # Calculate the CVaR of the final return distribution
     cvar = calculate_cvar(log_returns)
-    print(cvar)
 
-    return -cvar
+    return cvar
 
 def constraint_1(x):
-    return np.sum(x) - 60
+    return np.sum(x) - 1
 
 def constraint_2(x):
     return x
@@ -132,24 +133,43 @@ def optimize_distribution(params):
                    {'type': 'ineq', 'fun': constraint_2},
                    {'type': 'ineq', 'fun': constraint_3}]
     
+    # Instantiate the amm class
+    amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
+    
     # Callback function to print the current CVaR and the current parameters
-    def callback_function(x):
+    def callback_function(x, state):
+        # `state` is a placeholder for the second argument passed by `scipy.optimize.minimize`. 
+        # It is used by trust-constr.
         current_cvar = objective_function(x, amm_instance, params)
         logging.info(f"Current parameters: {x}")
         logging.info(f"Current CVaR: {current_cvar}")
+    
+    # Options for SLSQP
+    options = {
+        'maxiter': 1000,  # Maximum number of iterations (default: 100)
+        'ftol': 1e-9,    # Precision of the objective function value (default: 1e-6)
+        'eps': 1.5e-8,    # Step size used for numerical approximation of the Jacobian (default is sqrt(eps_machine))
+        }
 
-    # Initial guess (even distribution across pools)
-    initial_pools_dist = np.ones(params['N_pools']) * params['x_0']
-    # rand = np.random.uniform(0, 100, params['N_pools'])
-    # initial_pools_dist = rand / np.sum(rand) * 60
-    logging.info(f"Initial pools distribution:\n\t{initial_pools_dist}")
+    cond = True
+    while cond == True:
+        # Initial distribution of wealth across pools
+        random_vector = np.random.uniform(0, 100, params['N_pools'])
+        initial_pools_dist = random_vector / np.sum(random_vector)
+        try:
+            # Check it the guess is feasible
+            amm_instance.swap_and_mint(random_vector*params['x_0'], quote=True)
+            logging.info(f"Initial pools distribution:\n\t{initial_pools_dist}")
+            # Optimization procedure
+            result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
+                            method='trust-constr', constraints=constraints, callback=callback_function)#, options=options)
+            cond = False
+        except ValueError as e:
+            logging.info(f"Error: {e}")
 
-    # Instantiate the amm class
-    amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
-
-    # Optimization procedure
-    result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
-                      method='SLSQP', constraints=constraints, callback=callback_function)
+    # # Optimization procedure
+    # result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
+    #                   method='SLSQP', constraints=constraints, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
     print(result)
