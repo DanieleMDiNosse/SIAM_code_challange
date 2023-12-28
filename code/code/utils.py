@@ -21,7 +21,8 @@ from params import params
 import logging
 import os
 
-os.remove('output.log')
+if os.path.exists('output.log'):
+    os.remove('output.log')
 logging.basicConfig(filename=f'output.log', format='%(message)s', level=logging.INFO)
 
 def calculate_cvar(log_returns, alpha=0.95):
@@ -101,9 +102,6 @@ def objective_function(initial_pools_dist, amm_instance, params):
 def constraint_1(x):
     return np.sum(x) - 1
 
-def constraint_2(x):
-    return x
-
 def constraint_3(x):
     global probability
     return probability - 0.7
@@ -128,10 +126,10 @@ def optimize_distribution(params):
     log_returns = 0
     probability = 0
 
-    # Constraints
+    # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
-                   {'type': 'ineq', 'fun': constraint_2},
                    {'type': 'ineq', 'fun': constraint_3}]
+    bounds = [(0, 1) for i in range(params['N_pools'])]
     
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
@@ -142,7 +140,7 @@ def optimize_distribution(params):
         # It is used by trust-constr.
         current_cvar = objective_function(x, amm_instance, params)
         logging.info(f"Current parameters: {x}")
-        logging.info(f"Current CVaR: {current_cvar}")
+        logging.info(f"Current CVaR: {current_cvar}\n")
     
     # Options for SLSQP
     options = {
@@ -162,14 +160,10 @@ def optimize_distribution(params):
             logging.info(f"Initial pools distribution:\n\t{initial_pools_dist}")
             # Optimization procedure
             result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
-                            method='trust-constr', constraints=constraints, callback=callback_function)#, options=options)
+                            method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)#, options=options)
             cond = False
         except ValueError as e:
             logging.info(f"Error: {e}")
-
-    # # Optimization procedure
-    # result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
-    #                   method='SLSQP', constraints=constraints, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
     print(result)
