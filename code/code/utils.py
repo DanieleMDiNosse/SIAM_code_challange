@@ -21,9 +21,14 @@ from params import params
 import logging
 import os
 
-if os.path.exists('output.log'):
-    os.remove('output.log')
-logging.basicConfig(filename=f'output.log', format='%(message)s', level=logging.INFO)
+if os.getenv("PBS_JOBID") != None:
+    job_id = os.getenv("PBS_JOBID")
+else:
+    job_id = os.getpid()
+
+# if os.path.exists('output.log'):
+#     os.remove('output.log')
+logging.basicConfig(filename=f'output_{job_id}.log', format='%(message)s', level=logging.INFO)
 
 def calculate_cvar(log_returns, alpha=0.95):
     """
@@ -33,6 +38,16 @@ def calculate_cvar(log_returns, alpha=0.95):
     quantile = np.quantile(-log_returns, alpha)
     cvar = np.mean(-log_returns[-log_returns >= quantile])
     return cvar
+
+def calculate_cvar_RU(log_returns, alpha, beta):
+    """
+    Calculate the CVaR of a set of returns following Rockafellar and Uryasev.
+    """
+
+    global u
+    u = -log_returns - alpha
+    cvar_RU = alpha + 1 / ((1 - beta) * log_returns.shape[0]) * np.sum(u)
+    return cvar_RU, u
 
 def calculate_log_returns(x0, final_pools_dists, l):
     """
@@ -99,14 +114,54 @@ def objective_function(initial_pools_dist, amm_instance, params):
 
     return cvar
 
+def objective_function_RU(parameters, amm_instance, params):
+    '''Implement the objective function following Rockafellar and Uryasev (2000).'''
+    alpha = parameters[0]
+    initial_pools_dist = parameters[1:]
+
+    beta = params['alpha']
+    q = params['batch_size']
+
+    x0 = params['x_0'] * initial_pools_dist
+
+    l = amm_instance.swap_and_mint(x0)
+
+    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
+        kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=q)
+
+    # Calculate the log returns for each path
+    global log_returns
+    log_returns = calculate_log_returns(x0, final_pools_dists, l)
+
+    # Compute the probability of having a return greater than 0.05
+    global probability
+    probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
+
+    # Calculate the CVaR of the final return distribution
+    global u
+    cvar, u = calculate_cvar_RU(log_returns, alpha, beta)
+
+    return cvar
+
+
 def constraint_1(x):
     return np.sum(x) - 1
 
-def constraint_3(x):
+def constraint_2(x):
     global probability
     return probability - 0.7
 
-def optimize_distribution(params):
+def constraint_3(x):
+    global u
+    return u
+
+def constraint_4(x):
+    global u
+    global log_returns
+    c = x[0] + u + log_returns
+    return c
+
+def optimize_distribution(params, method='RockafellarUryasev'):
     """
     Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
     conditioned to P[final return > 0.05]>0.7.
@@ -127,9 +182,17 @@ def optimize_distribution(params):
     probability = 0
 
     # Constraints and bounds
-    constraints = [{'type': 'eq', 'fun': constraint_1},
-                   {'type': 'ineq', 'fun': constraint_3}]
-    bounds = [(0, 1) for i in range(params['N_pools'])]
+    if method == 'RockafellarUryasev':
+        constraints = [{'type': 'eq', 'fun': constraint_1},
+                   {'type': 'ineq', 'fun': constraint_2},
+                   {'type': 'ineq', 'fun': constraint_3},
+                   {'type': 'ineq', 'fun': constraint_4}]
+        bounds = [(0, 1) for i in range(params['N_pools'])]
+        bounds.insert(0, (None, None))
+    else:
+        constraints = [{'type': 'eq', 'fun': constraint_1},
+                   {'type': 'ineq', 'fun': constraint_2}]
+        bounds = [(0, 1) for i in range(params['N_pools'])]
     
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
@@ -138,7 +201,10 @@ def optimize_distribution(params):
     def callback_function(x, state):
         # `state` is a placeholder for the second argument passed by `scipy.optimize.minimize`. 
         # It is used by trust-constr.
-        current_cvar = objective_function(x, amm_instance, params)
+        if method == 'RockafellarUryasev':
+            current_cvar = objective_function_RU(x, amm_instance, params)
+        else:
+            current_cvar = objective_function(x, amm_instance, params)
         logging.info(f"Current parameters: {x}")
         logging.info(f"Current CVaR: {current_cvar}\n")
     
@@ -159,7 +225,11 @@ def optimize_distribution(params):
             amm_instance.swap_and_mint(random_vector*params['x_0'], quote=True)
             logging.info(f"Initial pools distribution:\n\t{initial_pools_dist}")
             # Optimization procedure
-            result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
+            if method == 'RockafellarUryasev':
+                result = minimize(objective_function_RU, np.insert(initial_pools_dist, 0, 0), args=(amm_instance, params),
+                            method='SLSQP', constraints=constraints, bounds=bounds, callback=callback_function)#, options=options)
+            else:
+                result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
                             method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)#, options=options)
             cond = False
         except ValueError as e:
@@ -204,6 +274,7 @@ def simulation_plots(x_0, params):
     ax[2].plot(np.array(Rx_t[i])/np.array(Ry_t[i]))
     ax[2].set_xlabel('Time')
     ax[2].set_ylabel('Marginal Price')
+    plt.savefig('pools.png')
 
     # Plot the distribution of the returns
     plt.figure(figsize=(10, 8), tight_layout=True)
@@ -213,5 +284,6 @@ def simulation_plots(x_0, params):
     plt.xlabel('Time')
     plt.ylabel('Returns')
     plt.legend()
+    plt.savefig('returns.png')
 
     plt.show()
