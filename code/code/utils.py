@@ -26,8 +26,6 @@ if os.getenv("PBS_JOBID") != None:
 else:
     job_id = os.getpid()
 
-# if os.path.exists('output.log'):
-#     os.remove('output.log')
 logging.basicConfig(filename=f'output_{job_id}.log', format='%(message)s', level=logging.INFO)
 
 def calculate_cvar(log_returns, alpha=0.95):
@@ -39,15 +37,13 @@ def calculate_cvar(log_returns, alpha=0.95):
     cvar = np.mean(-log_returns[-log_returns >= quantile])
     return cvar
 
-def calculate_cvar_RU(log_returns, alpha, beta):
+def calculate_cvar_RU(gamma, u, alpha):
     """
     Calculate the CVaR of a set of returns following Rockafellar and Uryasev.
     """
 
-    global u
-    u = -log_returns - alpha
-    cvar_RU = alpha + 1 / ((1 - beta) * log_returns.shape[0]) * np.sum(u)
-    return cvar_RU, u
+    cvar_RU = gamma + 1 / (1 - alpha) * np.mean(u)
+    return cvar_RU
 
 def calculate_log_returns(x0, final_pools_dists, l):
     """
@@ -61,7 +57,7 @@ def calculate_log_returns(x0, final_pools_dists, l):
     x_T = np.zeros(batch_size) # each element of x_T will be the final wealth of a path
 
     # In order to have the final wealth, we need to burn and swap the LP tokens
-    # for each path. This is done by the burn_and_swap method of the amm class.
+    # for each path. This is done by the     global log_returns method of the amm class.
     # The method takes all the LP tokens, burn them and swap coin-Y for coin-X.
     for k in range(batch_size):
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
@@ -74,7 +70,27 @@ def calculate_log_returns(x0, final_pools_dists, l):
 
     return log_returns
 
-def objective_function(initial_pools_dist, amm_instance, params):
+def portfolio_evolution(initial_pools_dist, amm_instance, params):
+    # Compute the actual tokens for each pool. The initial_pools_dist are the
+    # weights of the pools. We need to multiply them by the initial wealth
+    X0 = params['x_0'] * initial_pools_dist
+
+    # Evaluate the number of LP tokens. This will be used to compute the returns
+    l = amm_instance.swap_and_mint(X0)
+
+    # Simulate the evolution of the pools. We simulate params['batch_size'] paths, hence
+    # we will have params['batch_size'] number of returns at the end.
+    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
+        kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
+
+    # Calculate the log returns for each path
+    global log_returns
+    log_returns = calculate_log_returns(X0, final_pools_dists, l)
+
+    return log_returns
+
+
+def objective_function(parameters, amm_instance, params):
     """
     Objective function to minimize. It takes as input the initial wealth distribution
     ,the parameters of the model and the instance of the amm class. 
@@ -116,50 +132,43 @@ def objective_function(initial_pools_dist, amm_instance, params):
 
 def objective_function_RU(parameters, amm_instance, params):
     '''Implement the objective function following Rockafellar and Uryasev (2000).'''
-    alpha = parameters[0]
-    initial_pools_dist = parameters[1:]
 
-    beta = params['alpha']
-    q = params['batch_size']
+    # Extract the parameters to optimize from the parameters vector
+    gamma = parameters[0]
+    u = parameters[1:params['batch_size']+1]
+    initial_pools_dist = parameters[-params['N_pools']:]
 
-    x0 = params['x_0'] * initial_pools_dist
-
-    l = amm_instance.swap_and_mint(x0)
-
-    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
-        kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=q)
-
-    # Calculate the log returns for each path
+    # Evolve the portfolio
     global log_returns
-    log_returns = calculate_log_returns(x0, final_pools_dists, l)
+    log_returns = portfolio_evolution(initial_pools_dist, amm_instance, params)
 
     # Compute the probability of having a return greater than 0.05
     global probability
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
     # Calculate the CVaR of the final return distribution
-    global u
-    cvar, u = calculate_cvar_RU(log_returns, alpha, beta)
+    cvar = calculate_cvar_RU(gamma, u, alpha=params['alpha'])
 
     return cvar
 
 
 def constraint_1(x):
-    return np.sum(x) - 1
+    return np.sum(x[-params['N_pools']:]) - 1
 
 def constraint_2(x):
     global probability
     return probability - 0.7
 
 def constraint_3(x):
-    global u
+    u = x[1:params['batch_size']+1]
     return u
 
 def constraint_4(x):
-    global u
     global log_returns
-    c = x[0] + u + log_returns
-    return c
+    u = x[1:params['batch_size']+1]
+    gamma = x[0]
+    cond = u + log_returns + gamma
+    return cond
 
 def optimize_distribution(params, method='RockafellarUryasev'):
     """
@@ -187,8 +196,9 @@ def optimize_distribution(params, method='RockafellarUryasev'):
                    {'type': 'ineq', 'fun': constraint_2},
                    {'type': 'ineq', 'fun': constraint_3},
                    {'type': 'ineq', 'fun': constraint_4}]
-        bounds = [(0, 1) for i in range(params['N_pools'])]
-        bounds.insert(0, (None, None))
+        bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+        bounds_u = [(None, None) for i in range(params['batch_size'])]
+        bounds = [(0, 1), *bounds_u, *bounds_initial_dist]
     else:
         constraints = [{'type': 'eq', 'fun': constraint_1},
                    {'type': 'ineq', 'fun': constraint_2}]
@@ -198,14 +208,14 @@ def optimize_distribution(params, method='RockafellarUryasev'):
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
     
     # Callback function to print the current CVaR and the current parameters
-    def callback_function(x, state):
-        # `state` is a placeholder for the second argument passed by `scipy.optimize.minimize`. 
-        # It is used by trust-constr.
+    def callback_function(x, *args):
         if method == 'RockafellarUryasev':
             current_cvar = objective_function_RU(x, amm_instance, params)
-        else:
+        if method == 'vanilla':
             current_cvar = objective_function(x, amm_instance, params)
-        logging.info(f"Current parameters: {x}")
+        logging.info(f"Current initial_dist: {x[-6:]}")
+        logging.info(f"Current probability: {probability}")
+        logging.info(f"Current VaR:{x[0]}")
         logging.info(f"Current CVaR: {current_cvar}\n")
     
     # Options for SLSQP
@@ -221,19 +231,25 @@ def optimize_distribution(params, method='RockafellarUryasev'):
         random_vector = np.random.uniform(0, 100, params['N_pools'])
         initial_pools_dist = random_vector / np.sum(random_vector)
         try:
-            # Check it the guess is feasible
-            amm_instance.swap_and_mint(random_vector*params['x_0'], quote=True)
-            logging.info(f"Initial pools distribution:\n\t{initial_pools_dist}")
-            # Optimization procedure
-            if method == 'RockafellarUryasev':
-                result = minimize(objective_function_RU, np.insert(initial_pools_dist, 0, 0), args=(amm_instance, params),
-                            method='SLSQP', constraints=constraints, bounds=bounds, callback=callback_function)#, options=options)
-            else:
-                result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
-                            method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)#, options=options)
+            amm_instance.swap_and_mint(initial_pools_dist*params['x_0'], quote=True)
             cond = False
         except ValueError as e:
             logging.info(f"Error: {e}")
+        
+    gamma = np.random.uniform(0, 1)
+    u = np.random.uniform(0, 1, params['batch_size'])
+    initial_guess = np.array([gamma, *u, *initial_pools_dist])
+    logging.info(f"Initial guess:\n\t{initial_guess}")
+
+    # Optimization procedure
+    if method == 'RockafellarUryasev':
+        logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
+        result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
+                    method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)
+    else:
+        logging.info(f"Optimization method: vanilla. Start...")
+        result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
+                    method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)#, options=options)
 
     logging.info(f"Results:\n\t{result}")
     print(result)

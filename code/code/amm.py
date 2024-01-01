@@ -137,7 +137,7 @@ class amm():
 
         return l
 
-    def swap_and_mint(self, x):
+    def swap_and_mint(self, x, quote=False):
         """
         a method that determines the correct amount of y for each x within the corresponding pool
         to swap and then mint tokens with the reamaing x and the y you received

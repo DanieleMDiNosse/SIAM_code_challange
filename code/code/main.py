@@ -13,4 +13,4 @@ np.random.seed(params['seed'])
 optimal_x0 = optimize_distribution(params)
 
 if args.simulate == 1:
-    simulation_plots(optimal_x0, params)
+    simulation_plots(optimal_x0[-params['N_pools']:], params)
