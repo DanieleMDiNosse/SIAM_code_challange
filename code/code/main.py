@@ -10,7 +10,7 @@ parser.add_argument('-s', '--simulate', type=int, default=0, help='Simulate the 
 args = parser.parse_args()
 
 np.random.seed(params['seed'])
-optimal_x0 = optimize_distribution(params)
+res = optimize_distribution(params)
 
 if args.simulate == 1:
-    simulation_plots(optimal_x0[-params['N_pools']:], params)
+    simulation_plots(res, params)

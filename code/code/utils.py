@@ -52,14 +52,12 @@ def calculate_log_returns(x0, final_pools_dists, l):
     This function calculates the log returns for each final state of the pools over
     all the simulated paths.
     """
-
-    batch_size = len(final_pools_dists) # number of simulated paths
-    x_T = np.zeros(batch_size) # each element of x_T will be the final wealth of a path
+    x_T = np.zeros(params['batch_size']) # each element of x_T will be the final wealth of a path
 
     # In order to have the final wealth, we need to burn and swap the LP tokens
     # for each path. This is done by the     global log_returns method of the amm class.
     # The method takes all the LP tokens, burn them and swap coin-Y for coin-X.
-    for k in range(batch_size):
+    for k in range(params['batch_size']):
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
 
     # Calculate the initial wealth
@@ -78,8 +76,8 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
     # Evaluate the number of LP tokens. This will be used to compute the returns
     l = amm_instance.swap_and_mint(X0)
 
-    # Simulate the evolution of the pools. We simulate params['batch_size'] paths, hence
-    # we will have params['batch_size'] number of returns at the end.
+    # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
+    # hence we will have params['batch_size'] amount of returns at the end.
     final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
         kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
 
@@ -159,9 +157,9 @@ def constraint_2(x):
     global probability
     return probability - 0.7
 
-def constraint_3(x):
-    u = x[1:params['batch_size']+1]
-    return u
+# def constraint_3(x):
+#     u = x[1:params['batch_size']+1]
+#     return u
 
 def constraint_4(x):
     global log_returns
@@ -170,7 +168,7 @@ def constraint_4(x):
     cond = u + log_returns + gamma
     return cond
 
-def optimize_distribution(params, method='RockafellarUryasev'):
+def optimize_distribution(params):
     """
     Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
     conditioned to P[final return > 0.05]>0.7.
@@ -187,44 +185,29 @@ def optimize_distribution(params, method='RockafellarUryasev'):
     # probability of having a return greater than 0.05
     global probability
     global log_returns
-    log_returns = 0
-    probability = 0
+    log_returns, probability = 0, 0
 
     # Constraints and bounds
-    if method == 'RockafellarUryasev':
-        constraints = [{'type': 'eq', 'fun': constraint_1},
-                   {'type': 'ineq', 'fun': constraint_2},
-                   {'type': 'ineq', 'fun': constraint_3},
-                   {'type': 'ineq', 'fun': constraint_4}]
-        bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
-        bounds_u = [(None, None) for i in range(params['batch_size'])]
-        bounds = [(0, 1), *bounds_u, *bounds_initial_dist]
-    else:
-        constraints = [{'type': 'eq', 'fun': constraint_1},
-                   {'type': 'ineq', 'fun': constraint_2}]
-        bounds = [(0, 1) for i in range(params['N_pools'])]
+    constraints = [{'type': 'eq', 'fun': constraint_1},
+                {'type': 'ineq', 'fun': constraint_2},
+                {'type': 'ineq', 'fun': constraint_4}]
+    bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+    bounds_u = [(0, None) for i in range(params['batch_size'])]
+    bounds = [(0, 1), *bounds_u, *bounds_initial_dist]
     
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
     
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        if method == 'RockafellarUryasev':
-            current_cvar = objective_function_RU(x, amm_instance, params)
-        if method == 'vanilla':
-            current_cvar = objective_function(x, amm_instance, params)
-        logging.info(f"Current initial_dist: {x[-6:]}")
+        current_cvar = objective_function_RU(x, amm_instance, params)
+        logging.info(f"Current initial_dist: {x[-params['N_pools']:]}")
         logging.info(f"Current probability: {probability}")
         logging.info(f"Current VaR:{x[0]}")
         logging.info(f"Current CVaR: {current_cvar}\n")
-    
-    # Options for SLSQP
-    options = {
-        'maxiter': 1000,  # Maximum number of iterations (default: 100)
-        'ftol': 1e-9,    # Precision of the objective function value (default: 1e-6)
-        'eps': 1.5e-8,    # Step size used for numerical approximation of the Jacobian (default is sqrt(eps_machine))
-        }
 
+    # The following while loop is used to check if the initial distribution of wealth
+    # across pools is feasible. If it is not, a new one is generated.
     cond = True
     while cond == True:
         # Initial distribution of wealth across pools
@@ -242,26 +225,22 @@ def optimize_distribution(params, method='RockafellarUryasev'):
     logging.info(f"Initial guess:\n\t{initial_guess}")
 
     # Optimization procedure
-    if method == 'RockafellarUryasev':
-        logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
-        result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
-                    method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)
-    else:
-        logging.info(f"Optimization method: vanilla. Start...")
-        result = minimize(objective_function, initial_pools_dist, args=(amm_instance, params),
-                    method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)#, options=options)
+    logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
+    result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
+                method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
     print(result)
 
     return result.x
 
-def simulation_plots(x_0, params):
+def simulation_plots(res, params):
     """
     Plots the evolution of the reserves, the price and the returns for a given
     initial distribution of wealth across pools.
     """
-
+    x_0 = res[-params['N_pools']:]
+    var = res[0]
     # Initialize the pools
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
     # Evaluate the number of LP tokens
@@ -294,8 +273,9 @@ def simulation_plots(x_0, params):
 
     # Plot the distribution of the returns
     plt.figure(figsize=(10, 8), tight_layout=True)
-    plt.hist(log_returns, bins=50)
+    plt.hist(log_returns, bins=50, alpha=0.7)
     plt.axvline(cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
+    plt.axvline(var, color='b', linestyle='dashed', linewidth=1, label='VaR')
     plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$')
     plt.xlabel('Time')
     plt.ylabel('Returns')

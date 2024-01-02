@@ -286,7 +286,7 @@ class amm():
         event_direction_t = make_list(batch_size)
         pools = make_list(batch_size)
 
-        for k in tqdm(range(batch_size)):
+        for k in range(batch_size):
 
             N = np.random.poisson(lam = sum_kappa*T)
 
