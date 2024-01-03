@@ -101,21 +101,21 @@ if __name__ == '__main__':
      # Create a queue to collect results from workers
     output_queue = mp.Queue()
 
-    # Iterate over the random seed
-    for rgs_seed in range(10000):
-        logging.info(f'Random seed: {rgs_seed}')
-        np.random.seed(rgs_seed)
+    # # Iterate over the random seed
+    # for rgs_seed in range(10000):
+    #     logging.info(f'Random seed: {rgs_seed}')
+    #     np.random.seed(rgs_seed)
 
-        #Randomly draw the vector of weights theta and refularize it to have sum=1
-        theta = list()
-        for _ in range(len(params['Rx0'])):
-            theta.append( np.random.uniform() )
-        theta = np.array(theta) / np.sum(theta)
+    #     #Randomly draw the vector of weights theta and refularize it to have sum=1
+    #     theta = list()
+    #     for _ in range(len(params['Rx0'])):
+    #         theta.append( np.random.uniform() )
+    #     theta = np.array(theta) / np.sum(theta)
 
-        save_points.append(theta)
-        con, cvar = target_4_opt(theta, params, ret_inf=False)
-        save_cvar.append( cvar )
-        save_con.append( con )
+    #     save_points.append(theta)
+    #     con, cvar = target_4_opt(theta, params, ret_inf=False)
+    #     save_cvar.append( cvar )
+    #     save_con.append( con )
 
     # Create and start worker processes
     workers = []

@@ -30,6 +30,15 @@ def logging_config():
     logging.basicConfig(filename=f'output/opt_{job_id}.log', format='%(message)s', level=logging.INFO)
     return None
 
+def calculate_cvar(log_returns, alpha=0.95):
+    """
+    Calculate the CVaR of a set of returns.
+    """
+
+    quantile = np.quantile(-log_returns, alpha)
+    cvar = np.mean(-log_returns[-log_returns >= quantile])
+    return cvar
+
 def calculate_cvar_RU(gamma, u, alpha):
     """
     Calculate the CVaR of a set of returns following Rockafellar and Uryasev.
