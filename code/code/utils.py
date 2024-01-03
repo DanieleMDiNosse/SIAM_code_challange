@@ -21,21 +21,14 @@ from params import params
 import logging
 import os
 
-if os.getenv("PBS_JOBID") != None:
-    job_id = os.getenv("PBS_JOBID")
-else:
-    job_id = os.getpid()
+def logging_config():
+    if os.getenv("PBS_JOBID") != None:
+        job_id = os.getenv("PBS_JOBID")
+    else:
+        job_id = os.getpid()
 
-logging.basicConfig(filename=f'output/output_{job_id}.log', format='%(message)s', level=logging.INFO)
-
-def calculate_cvar(log_returns, alpha=0.95):
-    """
-    Calculate the CVaR of a set of returns.
-    """
-
-    quantile = np.quantile(-log_returns, alpha)
-    cvar = np.mean(-log_returns[-log_returns >= quantile])
-    return cvar
+    logging.basicConfig(filename=f'output/opt_{job_id}.log', format='%(message)s', level=logging.INFO)
+    return None
 
 def calculate_cvar_RU(gamma, u, alpha):
     """
@@ -89,48 +82,6 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
     log_returns = calculate_log_returns(X0, final_pools_dists, l)
 
     return log_returns
-
-
-def objective_function(parameters, amm_instance, params):
-    """
-    Objective function to minimize. It takes as input the initial wealth distribution
-    ,the parameters of the model and the instance of the amm class. 
-    It returns the CVaR of the final return distribution. Additionally, it evaluates
-    the log returns and the probability of having a return greater than 0.05. It set these
-    variables as global so that 'probability' can be used in the constraint_3 function and
-    'log_returns' can be used to plot the distribution of returns for the best initial wealth
-    distribution.
-    """
-
-    # Extract the parameters from the dictionary params
-    kappa, p, sigma = params['kappa'], params['p'], params['sigma']
-    T = params['T']
-    batch_size = params['batch_size']
-    N = params['N_pools']
-    x0 = params['x_0'] * parameters
-
-    # Evaluate the number of LP tokens
-    l = amm_instance.swap_and_mint(x0)
-
-    # Simulate the evolution of the pools.
-    # final_pools_dist is a list of length batch_size. Each element of the list contains 
-    # the final reserves of the pools for a given path. To access the final X reserve of
-    # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
-    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
-        kappa=kappa, p=p, sigma=sigma, T=T, batch_size=batch_size)
-
-    # Calculate the log returns for each path
-    global log_returns
-    log_returns = calculate_log_returns(x0, final_pools_dists, l)
-
-    # Compute the probability of having a return greater than 0.05
-    global probability
-    probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
-
-    # Calculate the CVaR of the final return distribution
-    cvar = calculate_cvar(log_returns)
-
-    return cvar
 
 def objective_function_RU(parameters, amm_instance, params):
     '''Implement the objective function following Rockafellar and Uryasev (2000).'''
@@ -231,7 +182,7 @@ def optimize_distribution(params):
     # Optimization procedure
     logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
     result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
-                method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)
+                method='SLSQP', constraints=constraints, bounds=bounds, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
     print(result)
