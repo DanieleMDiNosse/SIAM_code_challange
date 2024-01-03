@@ -26,7 +26,7 @@ if os.getenv("PBS_JOBID") != None:
 else:
     job_id = os.getpid()
 
-logging.basicConfig(filename=f'output_{job_id}.log', format='%(message)s', level=logging.INFO)
+logging.basicConfig(filename=f'output/output_{job_id}.log', format='%(message)s', level=logging.INFO)
 
 def calculate_cvar(log_returns, alpha=0.95):
     """
@@ -55,7 +55,7 @@ def calculate_log_returns(x0, final_pools_dists, l):
     x_T = np.zeros(params['batch_size']) # each element of x_T will be the final wealth of a path
 
     # In order to have the final wealth, we need to burn and swap the LP tokens
-    # for each path. This is done by the     global log_returns method of the amm class.
+    # for each path. This is done by the burn_and_swap method of the amm class.
     # The method takes all the LP tokens, burn them and swap coin-Y for coin-X.
     for k in range(params['batch_size']):
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
@@ -74,7 +74,10 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
     X0 = params['x_0'] * initial_pools_dist
 
     # Evaluate the number of LP tokens. This will be used to compute the returns
-    l = amm_instance.swap_and_mint(X0)
+    try:
+        l = amm_instance.swap_and_mint(X0)
+    except AssertionError as e:
+        logging.info(f"Error: {e}")
 
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
@@ -103,7 +106,8 @@ def objective_function(parameters, amm_instance, params):
     kappa, p, sigma = params['kappa'], params['p'], params['sigma']
     T = params['T']
     batch_size = params['batch_size']
-    x0 = params['x_0'] * initial_pools_dist
+    N = params['N_pools']
+    x0 = params['x_0'] * parameters
 
     # Evaluate the number of LP tokens
     l = amm_instance.swap_and_mint(x0)
