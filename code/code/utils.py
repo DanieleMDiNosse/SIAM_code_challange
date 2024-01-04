@@ -78,6 +78,11 @@ def calculate_log_returns(x0, final_pools_dists, l):
 def portfolio_evolution(initial_pools_dist, amm_instance, params):
     # Compute the actual tokens for each pool. The initial_pools_dist are the
     # weights of the pools. We need to multiply them by the initial wealth
+
+    # Check if there is a negative weight
+    if np.any(initial_pools_dist < 0):
+        initial_pools_dist = np.abs(initial_pools_dist)
+
     X0 = params['x_0'] * initial_pools_dist
 
     # Evaluate the number of LP tokens. This will be used to compute the returns
@@ -88,6 +93,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
 
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
+    np.random.seed(params['seed'])
     final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
         kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
 
@@ -233,17 +239,17 @@ def simulation_plots(res, params):
     ax[2].plot(np.array(Rx_t[i])/np.array(Ry_t[i]))
     ax[2].set_xlabel('Time')
     ax[2].set_ylabel('Marginal Price')
-    plt.savefig('pools.png')
+    plt.savefig(f'pools_{os.getenv("PBS_JOBID")}.png')
 
     # Plot the distribution of the returns
     plt.figure(figsize=(10, 8), tight_layout=True)
     plt.hist(log_returns, bins=50, alpha=0.7)
-    plt.axvline(cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
-    plt.axvline(var, color='b', linestyle='dashed', linewidth=1, label='VaR')
+    plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
+    plt.axvline(-var, color='b', linestyle='dashed', linewidth=1, label='VaR')
     plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$')
     plt.xlabel('Time')
     plt.ylabel('Returns')
     plt.legend()
-    plt.savefig('returns.png')
+    plt.savefig(f'returns_{os.getenv("PBS_JOBID")}.png')
 
     plt.show()
