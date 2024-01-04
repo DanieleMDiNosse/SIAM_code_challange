@@ -35,9 +35,9 @@ def calculate_cvar(log_returns, alpha=params['alpha']):
     Calculate the CVaR of a set of returns.
     """
 
-    quantile = np.quantile(-log_returns, alpha)
-    cvar = np.mean(-log_returns[-log_returns >= quantile])
-    return cvar
+    var = np.quantile(-log_returns, alpha)
+    cvar = np.mean(-log_returns[-log_returns >= var])
+    return cvar, var
 
 def calculate_cvar_RU(VaR, loss, alpha=params['alpha']):
     """
@@ -81,6 +81,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
 
     # Check if there is a negative weight
     if np.any(initial_pools_dist < 0):
+        logging.info(f'Negative weight found: {initial_pools_dist}')
         initial_pools_dist = np.abs(initial_pools_dist)
 
     X0 = params['x_0'] * initial_pools_dist
@@ -120,6 +121,13 @@ def objective_function_RU(parameters, amm_instance, params):
 
     # Calculate the CVaR of the final return distribution
     cvar = calculate_cvar_RU(VaR, -log_returns, alpha=params['alpha'])
+
+    logging.info(f"Random number:{np.random.normal()}")
+    logging.info(f"Current initial_dist: {initial_pools_dist}")
+    logging.info(f"Current CVaR: {cvar}")
+    logging.info(f"Current probability: {probability}")
+    logging.info(f"Current VaR:{VaR}")
+    logging.info(f"Current returns mean:{np.mean(log_returns)}\n")
 
     return cvar
 
@@ -192,15 +200,14 @@ def optimize_distribution(params):
         
     initial_VaR = np.random.uniform(0, 0.1)
     initial_guess = np.array([initial_VaR, *initial_pools_dist])
-    logging.info(f"Initial guess:\n\t{initial_guess}")
+    logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
     # Optimization procedure
     logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
     result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
-                method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)
+                method='trust-constr', constraints=constraints, bounds=bounds)# callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
-    print(result)
 
     return result.x
 
@@ -222,7 +229,7 @@ def simulation_plots(res, params):
     # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
     x_T, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=1000)
     log_returns = calculate_log_returns(x_0, x_T, l)
-    cvar = calculate_cvar(log_returns)
+    cvar, _ = calculate_cvar(log_returns)
 
     fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
     i = np.random.randint(0, params['N_pools'])
