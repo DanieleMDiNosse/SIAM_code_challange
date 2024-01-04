@@ -14,6 +14,5 @@ np.random.seed(params['seed'])
 res = optimize_distribution(params)
 
 if args.simulate == 1:
-    # res = np.array([0.11057456, 0.34389733, 0.17021943, 0.13990844, 0.22973344,
-    #    0.0056668 ])
+    # res = np.array([0.223867, 0.20610624, 0.19217621, 0.25484434, 0.12268736, 0.00031886])
     simulation_plots(res, params)

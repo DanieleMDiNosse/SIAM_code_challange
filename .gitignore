@@ -171,4 +171,5 @@ cython_debug/
 # every file in the output folder
 code/code/output/*
 
-
+# every png file
+*.png
