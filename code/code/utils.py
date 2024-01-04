@@ -21,16 +21,16 @@ from params import params
 import logging
 import os
 
-def logging_config():
+def logging_config(filename):
     if os.getenv("PBS_JOBID") != None:
         job_id = os.getenv("PBS_JOBID")
     else:
         job_id = os.getpid()
 
-    logging.basicConfig(filename=f'output/opt_{job_id}.log', format='%(message)s', level=logging.INFO)
-    return None
+    logging.basicConfig(filename=f'output/{filename}_{job_id}.log', format='%(message)s', level=logging.INFO)
+    return job_id
 
-def calculate_cvar(log_returns, alpha=0.95):
+def calculate_cvar(log_returns, alpha=params['alpha']):
     """
     Calculate the CVaR of a set of returns.
     """
@@ -39,12 +39,17 @@ def calculate_cvar(log_returns, alpha=0.95):
     cvar = np.mean(-log_returns[-log_returns >= quantile])
     return cvar
 
-def calculate_cvar_RU(gamma, u, alpha):
+def calculate_cvar_RU(VaR, loss, alpha=params['alpha']):
     """
     Calculate the CVaR of a set of returns following Rockafellar and Uryasev.
     """
-
-    cvar_RU = gamma + 1 / (1 - alpha) * np.mean(u)
+    diff = loss - VaR
+    diff = diff[diff >= 0]
+    mean_diff = np.mean(diff)
+    if np.isnan(mean_diff):
+        cvar_RU = VaR
+    else:
+        cvar_RU = VaR + 1 / (1 - alpha) * np.mean(diff)
     return cvar_RU
 
 def calculate_log_returns(x0, final_pools_dists, l):
@@ -96,8 +101,7 @@ def objective_function_RU(parameters, amm_instance, params):
     '''Implement the objective function following Rockafellar and Uryasev (2000).'''
 
     # Extract the parameters to optimize from the parameters vector
-    gamma = parameters[0]
-    u = parameters[1:params['batch_size']+1]
+    VaR = parameters[0]
     initial_pools_dist = parameters[-params['N_pools']:]
 
     # Evolve the portfolio
@@ -109,10 +113,9 @@ def objective_function_RU(parameters, amm_instance, params):
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
     # Calculate the CVaR of the final return distribution
-    cvar = calculate_cvar_RU(gamma, u, alpha=params['alpha'])
+    cvar = calculate_cvar_RU(VaR, -log_returns, alpha=params['alpha'])
 
     return cvar
-
 
 def constraint_1(x):
     return np.sum(x[-params['N_pools']:]) - 1
@@ -121,15 +124,14 @@ def constraint_2(x):
     global probability
     return probability - 0.7
 
-# def constraint_3(x):
-#     u = x[1:params['batch_size']+1]
-#     return u
+def constraint_3(x):
+    return x[-params['N_pools']:]
 
 def constraint_4(x):
     global log_returns
     u = x[1:params['batch_size']+1]
-    gamma = x[0]
-    cond = u + log_returns + gamma
+    VaR = x[0]
+    cond = u + log_returns + VaR
     return cond
 
 def optimize_distribution(params):
@@ -153,11 +155,10 @@ def optimize_distribution(params):
 
     # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
-                {'type': 'ineq', 'fun': constraint_2},
-                {'type': 'ineq', 'fun': constraint_4}]
+                {'type': 'ineq', 'fun': constraint_2}]
+                #{'type': 'ineq', 'fun': constraint_3}]
     bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
-    bounds_u = [(0, None) for i in range(params['batch_size'])]
-    bounds = [(0, 1), *bounds_u, *bounds_initial_dist]
+    bounds = [(0, 0.1), *bounds_initial_dist]
     
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
@@ -183,15 +184,14 @@ def optimize_distribution(params):
         except ValueError as e:
             logging.info(f"Error: {e}")
         
-    gamma = np.random.uniform(0, 1)
-    u = np.random.uniform(0, 1, params['batch_size'])
-    initial_guess = np.array([gamma, *u, *initial_pools_dist])
+    initial_VaR = np.random.uniform(0, 0.1)
+    initial_guess = np.array([initial_VaR, *initial_pools_dist])
     logging.info(f"Initial guess:\n\t{initial_guess}")
 
     # Optimization procedure
     logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
     result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
-                method='SLSQP', constraints=constraints, bounds=bounds, callback=callback_function)
+                method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
     print(result)

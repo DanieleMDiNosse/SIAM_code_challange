@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser(description='Optimize the initial wealth distri
 parser.add_argument('-s', '--simulate', type=int, default=0, help='Simulate the model with the optimal initial wealth distribution (1) or not (0)')
 args = parser.parse_args()
 
-logging_config()
+_ = logging_config('opt')
 np.random.seed(params['seed'])
 res = optimize_distribution(params)
 

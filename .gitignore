@@ -162,5 +162,13 @@ cython_debug/
 # sh files
 *.sh
 
-# every file with main.sh in the name
-*main.sh
+# every file with .sh.e<number> in the name
+*.sh.e[0-9]*
+
+# every file with .sh.o<number> in the name
+*.sh.o[0-9]*
+
+# every file in the output folder
+code/code/output/*
+
+
