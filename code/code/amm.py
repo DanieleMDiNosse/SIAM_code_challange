@@ -128,12 +128,15 @@ class amm():
 
         # Compute the amount of LP tokens you receive from each pool
         l = x*self.L/self.Rx
+        for i in range(len(l)):
+            if l[i] < 0:
+                print(x[i], self.L[i], self.Rx[i])
             
         # Update the pool states
         self.Rx += x
         self.Ry += y
         self.L += l
-        self.l += + l
+        self.l += l
 
         return l
 
@@ -207,6 +210,7 @@ class amm():
         """
 
         for k in range(len(self.L)):
+            # print(l[k], self.l[k])
             assert l[k] <= self.l[k], "you have insufficient LP tokens"
 
         # Compute the amount of token-X and token-Y you receive from each pool

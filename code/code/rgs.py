@@ -84,10 +84,9 @@ def worker_process(start_seed, end_seed, output_queue):
     output_queue.put((worker_save_points, worker_save_cvar, worker_save_con))
 
 if __name__ == '__main__':
-    job_id = logging_config('rgs')
+    logging_config()
 
-    #Initialize lists of result
-    save_points = list()
+    save_points = list() #Initialize lists of result
     save_cvar = list() 
     save_con = list()
 

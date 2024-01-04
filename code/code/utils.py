@@ -21,36 +21,23 @@ from params import params
 import logging
 import os
 
-def logging_config(filename):
+def logging_config():
     if os.getenv("PBS_JOBID") != None:
         job_id = os.getenv("PBS_JOBID")
     else:
         job_id = os.getpid()
 
-    logging.basicConfig(filename=f'output/{filename}_{job_id}.log', format='%(message)s', level=logging.INFO)
-    return job_id
+    logging.basicConfig(filename=f'output/output_{job_id}.log', format='%(message)s', level=logging.INFO)
+    return None
 
-def calculate_cvar(log_returns, alpha=params['alpha']):
+def calculate_cvar(log_returns):
     """
     Calculate the CVaR of a set of returns.
     """
 
-    quantile = np.quantile(-log_returns, alpha)
+    quantile = np.quantile(-log_returns, params['alpha'])
     cvar = np.mean(-log_returns[-log_returns >= quantile])
     return cvar
-
-def calculate_cvar_RU(VaR, loss, alpha=params['alpha']):
-    """
-    Calculate the CVaR of a set of returns following Rockafellar and Uryasev.
-    """
-    diff = loss - VaR
-    diff = diff[diff >= 0]
-    mean_diff = np.mean(diff)
-    if np.isnan(mean_diff):
-        cvar_RU = VaR
-    else:
-        cvar_RU = VaR + 1 / (1 - alpha) * np.mean(diff)
-    return cvar_RU
 
 def calculate_log_returns(x0, final_pools_dists, l):
     """
@@ -108,38 +95,64 @@ def objective_function_RU(parameters, amm_instance, params):
     global log_returns
     log_returns = portfolio_evolution(initial_pools_dist, amm_instance, params)
 
+def objective_function(parameters, amm_instance, params):
+    """
+    Objective function to minimize. It takes as input the initial wealth distribution
+    ,the parameters of the model and the instance of the amm class. 
+    It returns the CVaR of the final return distribution. Additionally, it evaluates
+    the log returns and the probability of having a return greater than 0.05. It set these
+    variables as global so that 'probability' can be used in the constraint_3 function and
+    'log_returns' can be used to plot the distribution of returns for the best initial wealth
+    distribution.
+    """
+
+    # Extract the parameters from the dictionary params
+    kappa, p, sigma = params['kappa'], params['p'], params['sigma']
+    T = params['T']
+    batch_size = params['batch_size']
+    x0 = params['x_0'] * parameters
+
+    # Evaluate the number of LP tokens
+    l = amm_instance.swap_and_mint(x0)
+    print(l)
+    print(parameters)
+
+    # Simulate the evolution of the pools.
+    # final_pools_dist is a list of length batch_size. Each element of the list contains 
+    # the final reserves of the pools for a given path. To access the final X reserve of
+    # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
+    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
+        kappa=kappa, p=p, sigma=sigma, T=T, batch_size=batch_size)
+
+    # Calculate the log returns for each path
+    global log_returns
+    log_returns = calculate_log_returns(x0, final_pools_dists, l)
+
     # Compute the probability of having a return greater than 0.05
     global probability
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
     # Calculate the CVaR of the final return distribution
-    cvar = calculate_cvar_RU(VaR, -log_returns, alpha=params['alpha'])
+    cvar = calculate_cvar(log_returns)
 
     return cvar
 
+
 def constraint_1(x):
-    return np.sum(x[-params['N_pools']:]) - 1
+    return np.sum(x) - 1
 
 def constraint_2(x):
     global probability
     return probability - 0.7
 
 def constraint_3(x):
+<<<<<<< Updated upstream
     return x[-params['N_pools']:]
 
 def constraint_4(x):
     global log_returns
     u = x[1:params['batch_size']+1]
     VaR = x[0]
-    cond = u + log_returns + VaR
-    return cond
-
-def optimize_distribution(params):
-    """
-    Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
-    conditioned to P[final return > 0.05]>0.7.
-
-    Args:
     - amm_instance (amm): Instance of the amm class.
     - params (dict): Parameters for the amm and optimization.
 
@@ -155,20 +168,26 @@ def optimize_distribution(params):
 
     # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
+<<<<<<< Updated upstream
                 {'type': 'ineq', 'fun': constraint_2}]
                 #{'type': 'ineq', 'fun': constraint_3}]
     bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
     bounds = [(0, 0.1), *bounds_initial_dist]
+=======
+                {'type': 'ineq', 'fun': constraint_2},
+                {'type': 'ineq', 'fun': constraint_3}]
+    bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+>>>>>>> Stashed changes
     
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
     
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        current_cvar = objective_function_RU(x, amm_instance, params)
-        logging.info(f"Current initial_dist: {x[-params['N_pools']:]}")
+        current_cvar = objective_function(x, amm_instance, params)
+        logging.info(f"Current initial_dist: {x}")
         logging.info(f"Current probability: {probability}")
-        logging.info(f"Current VaR:{x[0]}")
+        logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")
         logging.info(f"Current CVaR: {current_cvar}\n")
 
     # The following while loop is used to check if the initial distribution of wealth
@@ -177,21 +196,18 @@ def optimize_distribution(params):
     while cond == True:
         # Initial distribution of wealth across pools
         random_vector = np.random.uniform(0, 100, params['N_pools'])
-        initial_pools_dist = random_vector / np.sum(random_vector)
+        initial_guess = random_vector / np.sum(random_vector)
         try:
-            amm_instance.swap_and_mint(initial_pools_dist*params['x_0'], quote=True)
+            amm_instance.swap_and_mint(initial_guess*params['x_0'], quote=True)
             cond = False
         except ValueError as e:
             logging.info(f"Error: {e}")
-        
-    initial_VaR = np.random.uniform(0, 0.1)
-    initial_guess = np.array([initial_VaR, *initial_pools_dist])
     logging.info(f"Initial guess:\n\t{initial_guess}")
 
     # Optimization procedure
-    logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
-    result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
-                method='trust-constr', constraints=constraints, bounds=bounds, callback=callback_function)
+    logging.info(f"Optimization vanilla. Start...")
+    result = minimize(objective_function, initial_guess, args=(amm_instance, params),
+                method='SLSQP', constraints=constraints, bounds=bounds_initial_dist, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
     print(result)
