@@ -21,13 +21,13 @@ from params import params
 import logging
 import os
 
-def logging_config():
+def logging_config(filename):
     if os.getenv("PBS_JOBID") != None:
         job_id = os.getenv("PBS_JOBID")
     else:
         job_id = os.getpid()
 
-    logging.basicConfig(filename=f'output/output_{job_id}.log', format='%(message)s', level=logging.INFO)
+    logging.basicConfig(filename=f'output/{filename}_{job_id}.log', format='%(message)s', level=logging.INFO)
     return None
 
 def calculate_cvar(log_returns):
@@ -65,6 +65,11 @@ def calculate_log_returns(x0, final_pools_dists, l):
 def portfolio_evolution(initial_pools_dist, amm_instance, params):
     # Compute the actual tokens for each pool. The initial_pools_dist are the
     # weights of the pools. We need to multiply them by the initial wealth
+
+    # Check if there is a negative weight
+    if np.any(initial_pools_dist < 0):
+        logging.info(f'Negative weight: {initial_pools_dist}')
+        initial_pools_dist = np.abs(initial_pools_dist)
     X0 = params['x_0'] * initial_pools_dist
 
     # Evaluate the number of LP tokens. This will be used to compute the returns
@@ -75,6 +80,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
 
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
+    np.random.seed(params['seed'])
     final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
         kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
 
@@ -82,61 +88,11 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
     global log_returns
     log_returns = calculate_log_returns(X0, final_pools_dists, l)
 
-    return log_returns
-
-def objective_function_RU(parameters, amm_instance, params):
-    '''Implement the objective function following Rockafellar and Uryasev (2000).'''
-
-    # Extract the parameters to optimize from the parameters vector
-    VaR = parameters[0]
-    initial_pools_dist = parameters[-params['N_pools']:]
-
-    # Evolve the portfolio
-    global log_returns
-    log_returns = portfolio_evolution(initial_pools_dist, amm_instance, params)
-
-def objective_function(parameters, amm_instance, params):
-    """
-    Objective function to minimize. It takes as input the initial wealth distribution
-    ,the parameters of the model and the instance of the amm class. 
-    It returns the CVaR of the final return distribution. Additionally, it evaluates
-    the log returns and the probability of having a return greater than 0.05. It set these
-    variables as global so that 'probability' can be used in the constraint_3 function and
-    'log_returns' can be used to plot the distribution of returns for the best initial wealth
-    distribution.
-    """
-
-    # Extract the parameters from the dictionary params
-    kappa, p, sigma = params['kappa'], params['p'], params['sigma']
-    T = params['T']
-    batch_size = params['batch_size']
-    x0 = params['x_0'] * parameters
-
-    # Evaluate the number of LP tokens
-    l = amm_instance.swap_and_mint(x0)
-    print(l)
-    print(parameters)
-
-    # Simulate the evolution of the pools.
-    # final_pools_dist is a list of length batch_size. Each element of the list contains 
-    # the final reserves of the pools for a given path. To access the final X reserve of
-    # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
-    final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
-        kappa=kappa, p=p, sigma=sigma, T=T, batch_size=batch_size)
-
-    # Calculate the log returns for each path
-    global log_returns
-    log_returns = calculate_log_returns(x0, final_pools_dists, l)
-
     # Compute the probability of having a return greater than 0.05
     global probability
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
-    # Calculate the CVaR of the final return distribution
-    cvar = calculate_cvar(log_returns)
-
-    return cvar
-
+    return np.mean(-log_returns)
 
 def constraint_1(x):
     return np.sum(x) - 1
@@ -146,47 +102,43 @@ def constraint_2(x):
     return probability - 0.7
 
 def constraint_3(x):
-<<<<<<< Updated upstream
-    return x[-params['N_pools']:]
+    cvar = calculate_cvar(log_returns)
+    return 0.05 - cvar
 
-def constraint_4(x):
-    global log_returns
-    u = x[1:params['batch_size']+1]
-    VaR = x[0]
+def optimize_distribution(params):
+    """
+    Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
+    conditioned to P[final return > 0.05]>0.7.
+
+    Args:
     - amm_instance (amm): Instance of the amm class.
     - params (dict): Parameters for the amm and optimization.
 
     Returns:
     - dict: Optimal weights and corresponding CVaR.
     """
-
     # Global variables to store the log returns and the
     # probability of having a return greater than 0.05
+        
     global probability
     global log_returns
     log_returns, probability = 0, 0
 
     # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
-<<<<<<< Updated upstream
-                {'type': 'ineq', 'fun': constraint_2}]
-                #{'type': 'ineq', 'fun': constraint_3}]
-    bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
-    bounds = [(0, 0.1), *bounds_initial_dist]
-=======
                 {'type': 'ineq', 'fun': constraint_2},
                 {'type': 'ineq', 'fun': constraint_3}]
     bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
->>>>>>> Stashed changes
-    
+
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
-    
+
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        current_cvar = objective_function(x, amm_instance, params)
+        current_cvar = calculate_cvar(log_returns)
         logging.info(f"Current initial_dist: {x}")
         logging.info(f"Current probability: {probability}")
+        logging.info(f'Mean loss: {np.mean(-log_returns)}')
         logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")
         logging.info(f"Current CVaR: {current_cvar}\n")
 
@@ -205,12 +157,11 @@ def constraint_4(x):
     logging.info(f"Initial guess:\n\t{initial_guess}")
 
     # Optimization procedure
-    logging.info(f"Optimization vanilla. Start...")
-    result = minimize(objective_function, initial_guess, args=(amm_instance, params),
-                method='SLSQP', constraints=constraints, bounds=bounds_initial_dist, callback=callback_function)
+    logging.info(f"Minimization of expected loss with cvar constraint. Start...")
+    result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
+                method='trust-constr', constraints=constraints, bounds=bounds_initial_dist, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
-    print(result)
 
     return result.x
 
@@ -249,17 +200,17 @@ def simulation_plots(res, params):
     ax[2].plot(np.array(Rx_t[i])/np.array(Ry_t[i]))
     ax[2].set_xlabel('Time')
     ax[2].set_ylabel('Marginal Price')
-    plt.savefig('pools.png')
+    plt.savefig(f'pools_{os.getenv("PBS_JOBID")}.png')
 
     # Plot the distribution of the returns
     plt.figure(figsize=(10, 8), tight_layout=True)
     plt.hist(log_returns, bins=50, alpha=0.7)
-    plt.axvline(cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
-    plt.axvline(var, color='b', linestyle='dashed', linewidth=1, label='VaR')
+    plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
+    plt.axvline(-var, color='b', linestyle='dashed', linewidth=1, label='VaR')
     plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$')
     plt.xlabel('Time')
     plt.ylabel('Returns')
     plt.legend()
-    plt.savefig('returns.png')
+    plt.savefig(f'retur_{os.getenv("PBS_JOBID")}ns.png')
 
     plt.show()
