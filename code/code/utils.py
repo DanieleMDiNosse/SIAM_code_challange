@@ -52,7 +52,9 @@ def calculate_log_returns(x0, final_pools_dists, l):
     # for each path. This is done by the burn_and_swap method of the amm class.
     # The method takes all the LP tokens, burn them and swap coin-Y for coin-X.
     for k in range(params['batch_size']):
+        # logging.info(f'random number: {np.random.normal()}')
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
+        # logging.info(f'random number: {np.random.normal()}')
 
     # Calculate the initial wealth
     x_0 = np.sum(x0)
@@ -70,7 +72,9 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
     if np.any(initial_pools_dist < 0):
         logging.info(f'Negative weight: {initial_pools_dist}')
         initial_pools_dist = np.abs(initial_pools_dist)
-    X0 = params['x_0'] * initial_pools_dist
+    # res = np.array([2.48080213e-01, 2.02686541e-01, 2.00305892e-01, 2.11960272e-01,
+    #     1.36966020e-01, 1.07737608e-06])
+    X0 = params['x_0'] * res
     # Evaluate the number of LP tokens. This will be used to compute the returns
     try:
         l = amm_instance.swap_and_mint(X0)
@@ -80,12 +84,15 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
     np.random.seed(params['seed'])
+    # logging.info(f'random number: {np.random.normal()}')
     final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
         kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
-
+    # logging.info(f'random number: {np.random.normal()}')
     # Calculate the log returns for each path
     global log_returns
     log_returns = calculate_log_returns(X0, final_pools_dists, l)
+    logging.info(f"Log returns (pe) (global): {np.mean(log_returns)}, {np.std(log_returns)}, {np.min(log_returns)}, {np.max(log_returns)}")
+    exit()
 
     # Compute the probability of having a return greater than 0.05
     global probability
@@ -93,6 +100,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
 
     # Compute the CVaR
     cvar, var = calculate_cvar(log_returns)
+    logging.info(f"Initial_dist: {initial_pools_dist}")
     logging.info(f"CVaR: {cvar}")
     logging.info(f"VaR: {var}")
     logging.info(f"Probability: {probability}")
@@ -108,7 +116,7 @@ def constraint_2(x):
 
 def constraint_3(x):
     cvar, _ = calculate_cvar(log_returns)
-    return 0.05 - cvar
+    return 0.01 - cvar
 
 def optimize_distribution(params):
     """
@@ -176,9 +184,12 @@ def simulation_plots(res, params):
     Plots the evolution of the reserves, the price and the returns for a given
     initial distribution of wealth across pools.
     """
+
     X0 = res[-params['N_pools']:] * params['x_0']
+
     # Initialize the pools
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
+
     # Evaluate the number of LP tokens
     l = amm_instance.swap_and_mint(X0)
 
@@ -187,10 +198,19 @@ def simulation_plots(res, params):
     # the final reserves of the pools for a given path. To access the final X reserve of
     # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
     np.random.seed(params['seed'])
-    XT, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=1000)
+    # logging.info(f'random number: {np.random.normal()}')
+    XT, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
+        kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
+    # logging.info(f'random number: {np.random.normal()}')
+    # Calculate the log returns, cvar and var
+    # global log_returns
     log_returns = calculate_log_returns(X0, XT, l)
+    logging.info(f'log_returns (sp) (no global): {np.mean(log_returns)}, {np.std(log_returns)}, {np.min(log_returns)}, {np.max(log_returns)}')
+    exit()
+    probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
     cvar, var = calculate_cvar(log_returns)
-
+    logging.info(f"Log returns: {log_returns[0]}")
+    exit()
     fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
     i = np.random.randint(0, params['N_pools'])
     # Plot the evolution of the reserves
@@ -213,10 +233,10 @@ def simulation_plots(res, params):
     plt.hist(log_returns, bins=50, alpha=0.7)
     plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
     plt.axvline(-var, color='b', linestyle='dashed', linewidth=1, label='VaR')
-    # plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$')
+    plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$', alpha=0.0)
     plt.xlabel('Time')
     plt.ylabel('Returns')
-    plt.legend([f'CVaR:{-cvar}', f'VaR:{-var}', fr'$E[r_T]$:{np.mean(log_returns):.3f}'])
+    plt.legend([f'CVaR:{-cvar}', f'VaR:{-var}', fr'$E[r_T]$:{np.mean(log_returns):.3f}', fr'$P[r_T>\xi]$:{probability:.3f}'])
     plt.savefig(f'returns_{os.getenv("PBS_JOBID")}.png')
 
     plt.show()
