@@ -159,6 +159,8 @@ class amm():
         theta = 1 + (2 - self.phi)*self.Rx*(1 - np.sqrt(
             1+4*x*(1-self.phi)/(self.Rx*(2-self.phi)**2)
             )) / ( 2*(1 - self.phi)*x )
+        #print(theta)
+        assert not np.isnan(theta).any(), 'Received NaN from theta'
 
         return self.mint(x*theta, self.swap_x_to_y(x*(1-theta), quote=False))
     
