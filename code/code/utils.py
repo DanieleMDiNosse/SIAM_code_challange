@@ -20,6 +20,7 @@ from amm import amm
 from params import params
 import logging
 import os
+import copy
 
 def logging_config(filename):
     if os.getenv("PBS_JOBID") != None:
@@ -104,7 +105,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
 
     return log_returns
 
-def objective_function_RU(parameters, amm_instance, params):
+def objective_function_RU(parameters, amm_instance_, params):
     '''Implement the objective function following Rockafellar and Uryasev (2000).'''
 
     # Extract the parameters to optimize from the parameters vector
@@ -113,6 +114,8 @@ def objective_function_RU(parameters, amm_instance, params):
 
     # Evolve the portfolio
     global log_returns
+
+    amm_instance = copy.deepcopy(amm_instance_) #Avoid modifying the input
     log_returns = portfolio_evolution(initial_pools_dist, amm_instance, params)
 
     # Compute the probability of having a return greater than 0.05
