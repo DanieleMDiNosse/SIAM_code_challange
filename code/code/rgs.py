@@ -1,6 +1,7 @@
 
 #%% Importing
 
+import copy
 import pickle
 import random
 import numpy as np
@@ -8,6 +9,28 @@ from amm import amm
 from params import params
 from tqdm.auto import tqdm
 from utils import calculate_cvar, calculate_log_returns
+
+'''
+MINIMUM approx
+[0.11057456, 0.34389733, 0.17021943, 0.13990844, 0.22973344, 0.0056668]
+cvar = 0.029587175946245044
+
+Top 5%
+cvar = 0.030439706303845397
+
+Top 1%
+cvar = 0.03004233448060176
+
+Equi-weighted
+cvar = 0.03121627321033861
+cvar_vals = np.array(opt_res['cvar'])
+100*len(cvar_vals[cvar_vals <= cvar]) / len(cvar_vals)
+21.78%
+
+Mio Easy
+cvar = 0.030738017656835127
+10.22%
+'''
 
 OUTPUT_FOLDER = '/home/garo/Desktop/Lavoro_Studio/[SIAG] Challenge/SIAM_code_challange/code/temp_results'
 
@@ -22,13 +45,13 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
     INPUT:
         - theta: np.array containing the weights of the portfolio
         - params: dict containing the parameters of the simulation
-        - ret_inf: bool, if True when the constraint E[ r>zeta ] > 0.7 is not
+        - ret_inf: bool, if True when the constraint P[ r>zeta ] > 0.7 is not
             satisfied the output is np.inf; otherwise is np.nan
         - full_output: bool, whenever to include also the constraint in the output
     OUTPUT:
-        - cvar = If the constraint E[ r>zeta ] > 0.7 is satisfied, return CVaR.
+        - cvar = If the constraint P[ r>zeta ] > 0.7 is satisfied, return CVaR.
             Otherwise, the result is either np.nan or np.inf, according to ret_inf
-        - constraint = E[ r>zeta ] - 0.7
+        - constraint = P[ r>zeta ] - 0.7
     '''
     np.random.seed(params['seed']) #Fix the seed for the next operations
 
@@ -46,9 +69,9 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
     # Simulate 1000 paths of trading in the pools
     end_pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t =\
         pools.simulate(
-            kappa=params['kappa'],
-            p=params['p'],
-            sigma=params['sigma'],
+            kappa=np.array(params['kappa']),
+            p=np.array(params['p']),
+            sigma=np.array(params['sigma']),
             T=params['T'],
             batch_size=params['batch_size'])
     # Compute the log returns
@@ -89,87 +112,3 @@ with open(f'{OUTPUT_FOLDER}/rgs_output.pickle', 'wb') as f:
     pickle.dump({'points':save_points,
                  'cvar':save_cvar,
                  'constraint':save_con}, f)
-
-# %% Some plots to have an idea...
-    
-import seaborn as sns
-import matplotlib.pyplot as plt
-sns.set_theme()
-
-#Load the data
-with open(f'{OUTPUT_FOLDER}/rgs_output.pickle', 'rb') as f:
-    opt_res = pickle.load(f)
-    
-# Plot the cvar as a function of the constraint. I'm trying to understand
-#   whenever the constraint is active (i.e. cvar minimum is on the boundary con=0)
-
-fig, ax = plt.subplots(1, 1)
-sns.scatterplot(x=np.array(opt_res['constraint'])[ ~ np.isnan(opt_res['cvar']) ],
-                y=np.array(opt_res['cvar'])[ ~ np.isnan(opt_res['cvar']) ], ax = ax)
-ax.axhline(0.03121627321033861, color=sns.color_palette()[1], linestyle='--', label='Equi-weighted portfolio')
-ax.set_xlabel(r'Constraint $\mathbb{P}[r_T > \zeta] - 0.7$')
-ax.set_ylabel(r'$CVaR_\alpha$')
-ax.legend()
-plt.show()
-
-# Histplot of the CVaR. Maybe, in the future it can be useful to contextualize
-#   the performance of out approach
-
-fig, ax = plt.subplots(1, 1)
-sns.histplot(ax = ax, x=opt_res['cvar'], kde=True)
-ax.axvline(0.03121627321033861, color=sns.color_palette()[1], linestyle='--', label='Equi-weighted portfolio')
-ax.set_xlabel(r'$CVaR_\alpha$')
-ax.legend()
-plt.show()
-
-# %% Local impact of theta: empirical analysis
-
-# My first idea is to use an iterative algorithm, where we locally assume the theta
-#   impact on the pool dynamic is negligible, and it only after portfolio weights.
-
-approx = True #Determine whenever to compute the true or the approximated value
-
-theta = [1]*6
-theta = np.array(theta) / np.sum(theta)
-
-np.random.seed(params['seed']) #Fix the seed for the next operations
-
-#Initialize the pools
-Rx0 = params['Rx0']
-Ry0 = params['Ry0']
-phi = params['phi']
-pools = amm(Rx=Rx0, Ry=Ry0, phi=phi)
-
-#The amount to invest on each pool is given by the weight in theta mult by the total capital
-xs_0 = params['x_0']*theta
-# Obtain the quote for the swap and mint
-l = pools.swap_and_mint(xs_0) #Swap and mint to obtain the quote
-
-if approx:
-    pools = amm(Rx=Rx0, Ry=Ry0, phi=phi) #Reinitialize the pools to neglect the changes
-
-# Simulate 1000 paths of trading in the pools
-end_pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t =\
-    pools.simulate(
-        kappa=params['kappa'],
-        p=params['p'],
-        sigma=params['sigma'],
-        T=params['T'],
-        batch_size=params['batch_size'])
-
-if approx:
-    for k in range(len(end_pools)):
-        end_pools[k].l = l.copy()
-
-#Compute the return
-log_ret = calculate_log_returns(xs_0, end_pools, l)
-constraint= len(log_ret[ log_ret>params['zeta'] ]) / len(log_ret) - 0.7
-cvar = calculate_cvar(log_ret)
-if approx:
-    print('Approximated value: Constraint = ', round(constraint, 5),
-          '     CVaR', round(cvar, 5))
-else:
-    print('Actual value: Constraint = ', round(constraint, 5),
-          '     CVaR', round(cvar, 5))
-
-# %%
