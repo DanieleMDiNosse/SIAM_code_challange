@@ -124,7 +124,7 @@ class amm():
         """
 
         for k in range(len(self.Rx)):
-            assert np.abs(((x[k]/y[k])-self.Rx[k]/self.Ry[k])) < 1e-9, "pool " + str(k) + f" has incorrect submission of tokens:\n\t{x[k]},{y[k]},{self.Rx[k]},{self.Ry[k]}"
+            assert np.abs(((x[k]/y[k])-self.Rx[k]/self.Ry[k])) < 1e-9, "pool " + str(k) + f" has incorrect submission of tokens:\n\tSubmission ratio: {x[k]/y[k]:.9f}\tMarginal Price: {self.Rx[k]/self.Ry[k]:.9f}"
 
         # Compute the amount of LP tokens you receive from each pool
         l = x*self.L/self.Rx
