@@ -61,45 +61,46 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
             cvar = np.inf
     return constraint, cvar
 
-save_points = list() #Initialize lists of result
-save_cvar = list() 
-save_con = list()
+if __name__ == '__main__':
+    save_points = list() #Initialize lists of result
+    save_cvar = list() 
+    save_con = list()
 
-c = 0
-logging_config('rgs') #Initialize the logger
-# Iterate over the random seed
-for rgs_seed in range(20000):
-    if c % 100 == 0:
-        logging.info(f'Iteration {c}')
-    c += 1
+    c = 0
+    logging_config('rgs') #Initialize the logger
+    # Iterate over the random seed
+    for rgs_seed in range(20000):
+        if c % 100 == 0:
+            logging.info(f'Iteration {c}')
+        c += 1
 
-    np.random.seed(rgs_seed)
+        np.random.seed(rgs_seed)
 
-    #Randomly draw the vector of weights theta and refularize it to have sum=1
-    theta = list()
-    for _ in range(len(params['Rx0'])):
-        theta.append( np.random.uniform() )
-    theta = np.array(theta) / np.sum(theta)
+        #Randomly draw the vector of weights theta and refularize it to have sum=1
+        theta = list()
+        for _ in range(len(params['Rx0'])):
+            theta.append( np.random.uniform() )
+        theta = np.array(theta) / np.sum(theta)
 
-    save_points.append(theta)
-    con, cvar = target_4_opt(theta, params, ret_inf=False)
-    save_cvar.append( cvar )
-    save_con.append( con )
+        save_points.append(theta)
+        con, cvar = target_4_opt(theta, params, ret_inf=False)
+        save_cvar.append( cvar )
+        save_con.append( con )
 
-    if c % 1000 == 0:
-        try:
-            logging.info(f'{c} -> Best result: {save_points[np.argmin(save_cvar)]}')
-            logging.info(f'{c} -> CVaR: {save_cvar[np.argmin(save_cvar)]}')
-        except Exception as e:
-            logging.info(f'Error: {e}')
+        if c % 1000 == 0:
+            try:
+                logging.info(f'{c} -> Best result: {save_points[np.argmin(save_cvar)]}')
+                logging.info(f'{c} -> CVaR: {save_cvar[np.argmin(save_cvar)]}')
+            except Exception as e:
+                logging.info(f'Error: {e}')
 
-with open(f'{OUTPUT_FOLDER}/rgs_output_{os.getenv("PBS_JOBID")}.pickle', 'wb') as f:
-    pickle.dump({'points':save_points,
-                 'cvar':save_cvar,
-                 'constraint':save_con}, f)
-    
-# print the best result
-best = np.argmin(save_cvar)
-logging.info(f'Best result: {save_points[best]}')
-logging.info(f'CVaR: {save_cvar[best]}')
+    with open(f'{OUTPUT_FOLDER}/rgs_output_{os.getenv("PBS_JOBID")}.pickle', 'wb') as f:
+        pickle.dump({'points':save_points,
+                    'cvar':save_cvar,
+                    'constraint':save_con}, f)
+        
+    # print the best result
+    best = np.argmin(save_cvar)
+    logging.info(f'Best result: {save_points[best]}')
+    logging.info(f'CVaR: {save_cvar[best]}')
 
