@@ -106,11 +106,11 @@ def constraint_1(x):
 
 def constraint_2(x):
     global probability
-    return probability - 0.7
+    return probability - params['q']
 
 def constraint_3(x):
     cvar, _ = calculate_cvar(log_returns)
-    return 0.01 - cvar
+    return 0.05 - cvar
 
 def optimize_distribution(params, method):
     """
