@@ -112,6 +112,10 @@ def objective_function_RU(parameters, amm_instance_, params):
     VaR = parameters[0]
     initial_pools_dist = parameters[-params['N_pools']:]
 
+    if np.any(initial_pools_dist < 0):
+        logging.info(f'Negative weight found: {initial_pools_dist}')
+        initial_pools_dist = np.abs(initial_pools_dist)
+
     #Avoid modifying the input
     amm_instance = copy.deepcopy(amm_instance_)
 
@@ -223,10 +227,17 @@ def simulation_plots(res, params):
     Plots the evolution of the reserves, the price and the returns for a given
     initial distribution of wealth across pools.
     """
+
+    # Extract the parameters from the optimization result
     x_0 = res[-params['N_pools']:]
     var = res[0]
+
+    # Initial distribution of wealth across pools
+    x_0 = x_0 * params['x_0']
+
     # Initialize the pools
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
+
     # Evaluate the number of LP tokens
     l = amm_instance.swap_and_mint(x_0)
 
@@ -236,7 +247,14 @@ def simulation_plots(res, params):
     # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
     x_T, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=1000)
     log_returns = calculate_log_returns(x_0, x_T, l)
-    cvar, _ = calculate_cvar(log_returns)
+    probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
+    cvar, var_emp = calculate_cvar(log_returns)
+
+    logging.info(f'Initial distribution of wealth across pools: {x_0}')
+    logging.info(f'VaR: {var}')
+    logging.info(f'VaR empirical: {var_emp}')
+    logging.info(f'CVaR: {cvar}')
+    logging.info(f'Probability: {probability}\n')
 
     fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
     i = np.random.randint(0, params['N_pools'])
@@ -260,10 +278,10 @@ def simulation_plots(res, params):
     plt.hist(log_returns, bins=50, alpha=0.7)
     plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
     plt.axvline(-var, color='b', linestyle='dashed', linewidth=1, label='VaR')
-    plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$')
+    plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$', alpha=0)
     plt.xlabel('Time')
     plt.ylabel('Returns')
-    plt.legend()
+    plt.legend([f'CVaR:{-cvar}', f'VaR:{-var}', fr'$P[r_T>\xi]$:{probability:.3f}', fr'$E[r_T]$:{np.mean(log_returns):.3f}'])
     plt.savefig(f'returns_{os.getenv("PBS_JOBID")}.png')
 
     plt.show()
