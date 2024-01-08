@@ -30,12 +30,13 @@ else:
 #     os.remove('output.log')
 logging.basicConfig(filename=f'output_{job_id}.log', format='%(message)s', level=logging.INFO)
 
-def calculate_cvar(log_returns, alpha=0.95):
+def calculate_cvar(log_returns):
     """
     Calculate the CVaR of a set of returns.
     """
+    global params
 
-    quantile = np.quantile(-log_returns, alpha)
+    quantile = np.quantile(-log_returns, params['alpha'])
     cvar = np.mean(-log_returns[-log_returns >= quantile])
     return cvar
 
