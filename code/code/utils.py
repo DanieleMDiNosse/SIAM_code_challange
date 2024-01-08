@@ -67,7 +67,8 @@ def calculate_log_returns(x0, final_pools_dists, l):
 
 def portfolio_evolution(initial_pools_dist, amm_instance_, params):
     # Avoid the modification of the amm instance every function call
-    amm_instance = copy.deepcopy(amm_instance_)
+    # amm_instance = copy.deepcopy(amm_instance_)
+    amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
 
     # Check if there is a negative weight
     if np.any(initial_pools_dist < 0):
@@ -99,6 +100,10 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params):
     global probability
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
+    global cvar
+    global var
+    cvar, var = calculate_cvar(log_returns)
+
     return np.mean(-log_returns)
 
 def constraint_1(x):
@@ -109,7 +114,6 @@ def constraint_2(x):
     return probability - params['q']
 
 def constraint_3(x):
-    cvar, _ = calculate_cvar(log_returns)
     return 0.05 - cvar
 
 def optimize_distribution(params, method):
@@ -129,7 +133,9 @@ def optimize_distribution(params, method):
         
     global probability
     global log_returns
-    log_returns, probability = np.zeros(10), 0
+    global cvar
+    global var
+    log_returns, probability, cvar, var = np.zeros(10), 0, 0, 0
 
     # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
@@ -142,12 +148,12 @@ def optimize_distribution(params, method):
 
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        current_cvar, _ = calculate_cvar(log_returns)
         logging.info(f"Current initial_dist: {x}")
         logging.info(f"Current probability: {probability}")
-        logging.info(f'Mean loss: {np.mean(-log_returns)}')
-        logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")
-        logging.info(f"Current CVaR: {current_cvar}\n")
+        logging.info(f'Mean ret: {np.mean(log_returns)}')
+        logging.info(f'Std ret: {np.std(log_returns)}')
+        logging.info(f"Current VaR: {var}")
+        logging.info(f"Current CVaR: {cvar}\n")
 
     # The following while loop is used to check if the initial distribution of wealth
     # across pools is feasible. If it is not, a new one is generated.
