@@ -67,8 +67,8 @@ def calculate_log_returns(x0, final_pools_dists, l):
 
 def portfolio_evolution(initial_pools_dist, amm_instance_, params):
     # Avoid the modification of the amm instance every function call
-    amm_instance = copy.deepcopy(amm_instance_)
-
+    # amm_instance = copy.deepcopy(amm_instance_)
+    amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
     # Check if there is a negative weight
     if np.any(initial_pools_dist < 0):
         logging.info(f'Negative weight: {initial_pools_dist}')
@@ -87,19 +87,23 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params):
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
     np.random.seed(params['seed'])
-    # logging.info(f'random number: {np.random.normal()}')
+
     final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
         kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
-    # logging.info(f'random number: {np.random.normal()}')
+
     # Calculate the log returns for each path
     global log_returns
     log_returns = calculate_log_returns(X0, final_pools_dists, l)
+
+    # Compute the cvar
+    global cvar
+    cvar, _ = calculate_cvar(log_returns)
 
     # Compute the probability of having a return greater than 0.05
     global probability
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
-    return np.mean(-log_returns)
+    return cvar
 
 def constraint_1(x):
     return np.sum(x) - 1
@@ -108,14 +112,10 @@ def constraint_2(x):
     global probability
     return probability - params['q']
 
-def constraint_3(x):
-    cvar, _ = calculate_cvar(log_returns)
-    return 0.05 - cvar
-
 def optimize_distribution(params, method):
     """
     Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
-    conditioned to P[final return > 0.05]>0.7.
+    conditioned to P[final return > 0.05]>params['q'].
 
     Args:
     - amm_instance (amm): Instance of the amm class.
@@ -124,17 +124,16 @@ def optimize_distribution(params, method):
     Returns:
     - dict: Optimal weights and corresponding CVaR.
     """
+    np.random.seed(params['seed'])
     # Global variables to store the log returns and the
     # probability of having a return greater than 0.05
-        
     global probability
     global log_returns
-    log_returns, probability = np.zeros(10), 0
+    log_returns, probability = 0, 0
 
     # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
-                {'type': 'ineq', 'fun': constraint_2},
-                {'type': 'ineq', 'fun': constraint_3}]
+                {'type': 'ineq', 'fun': constraint_2}]
     bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
 
     # Instantiate the amm class
@@ -142,12 +141,12 @@ def optimize_distribution(params, method):
 
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        current_cvar, _ = calculate_cvar(log_returns)
+        # current_cvar, _ = calculate_cvar(log_returns)
         logging.info(f"Current initial_dist: {x}")
         logging.info(f"Current probability: {probability}")
         logging.info(f'Mean loss: {np.mean(-log_returns)}')
         logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")
-        logging.info(f"Current CVaR: {current_cvar}\n")
+        logging.info(f"Current CVaR: {cvar}\n")
 
     # The following while loop is used to check if the initial distribution of wealth
     # across pools is feasible. If it is not, a new one is generated.
@@ -164,10 +163,9 @@ def optimize_distribution(params, method):
     logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
     # Optimization procedure
-    logging.info(f"Minimization of expected loss with cvar constraint")
+    logging.info(f"Minimization of vanilla cVaR")
     logging.info(f"Optimization method: {method}")
     logging.info("Starting...")
-    logging.info(f"batch size:\n\t{params['batch_size']}\n")
     result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
                 method=method, constraints=constraints, bounds=bounds_initial_dist, callback=callback_function)
 
