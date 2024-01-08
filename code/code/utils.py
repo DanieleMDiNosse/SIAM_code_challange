@@ -112,10 +112,11 @@ def objective_function_RU(parameters, amm_instance_, params):
     VaR = parameters[0]
     initial_pools_dist = parameters[-params['N_pools']:]
 
+    #Avoid modifying the input
+    amm_instance = copy.deepcopy(amm_instance_)
+
     # Evolve the portfolio
     global log_returns
-
-    amm_instance = copy.deepcopy(amm_instance_) #Avoid modifying the input
     log_returns = portfolio_evolution(initial_pools_dist, amm_instance, params)
 
     # Compute the probability of having a return greater than 0.05
@@ -125,12 +126,12 @@ def objective_function_RU(parameters, amm_instance_, params):
     # Calculate the CVaR of the final return distribution
     cvar = calculate_cvar_RU(VaR, -log_returns, alpha=params['alpha'])
 
-    logging.info(f"Random number:{np.random.normal()}")
-    logging.info(f"Current initial_dist: {initial_pools_dist}")
-    logging.info(f"Current CVaR: {cvar}")
-    logging.info(f"Current probability: {probability}")
-    logging.info(f"Current VaR:{VaR}")
-    logging.info(f"Current returns mean:{np.mean(log_returns)}\n")
+    # logging.info(f"Random number:{np.random.normal()}")
+    # logging.info(f"Current initial_dist: {initial_pools_dist}")
+    # logging.info(f"Current CVaR: {cvar}")
+    # logging.info(f"Current probability: {probability}")
+    # logging.info(f"Current VaR:{VaR}")
+    # logging.info(f"Current returns mean:{np.mean(log_returns)}\n")
 
     return cvar
 
@@ -151,7 +152,7 @@ def constraint_4(x):
     cond = u + log_returns + VaR
     return cond
 
-def optimize_distribution(params):
+def optimize_distribution(params, method):
     """
     Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
     conditioned to P[final return > 0.05]>0.7.
@@ -186,7 +187,8 @@ def optimize_distribution(params):
         logging.info(f"Current initial_dist: {x[-params['N_pools']:]}")
         logging.info(f"Current probability: {probability}")
         logging.info(f"Current VaR:{x[0]}")
-        logging.info(f"Current CVaR: {current_cvar}\n")
+        logging.info(f"Current CVaR: {current_cvar}")
+        logging.info(f"Current returns mean:{np.mean(log_returns)}\n")
 
     # The following while loop is used to check if the initial distribution of wealth
     # across pools is feasible. If it is not, a new one is generated.
@@ -206,9 +208,11 @@ def optimize_distribution(params):
     logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
     # Optimization procedure
-    logging.info(f"Optimization method: Rockafellar and Uryasev (2000). Start...")
+    logging.info(f"Optimization method: Rockafellar and Uryasev (2000)")
+    logging.info(f"Optimization method: {method}")
+    logging.info('Starting...')
     result = minimize(objective_function_RU, initial_guess, args=(amm_instance, params),
-                method='trust-constr', constraints=constraints, bounds=bounds)# callback=callback_function)
+                method=method, constraints=constraints, bounds=bounds, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
 
