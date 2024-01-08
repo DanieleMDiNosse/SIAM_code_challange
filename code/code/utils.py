@@ -92,6 +92,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance, params):
         l = amm_instance.swap_and_mint(X0)
     except AssertionError as e:
         logging.info(f"Error: {e}")
+        logging.info(f"Initial pools distribution: {initial_pools_dist}")
 
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
@@ -117,7 +118,8 @@ def objective_function_RU(parameters, amm_instance_, params):
         initial_pools_dist = np.abs(initial_pools_dist)
 
     #Avoid modifying the input
-    amm_instance = copy.deepcopy(amm_instance_)
+    # amm_instance = copy.deepcopy(amm_instance_)
+    amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
 
     # Evolve the portfolio
     global log_returns
@@ -128,14 +130,8 @@ def objective_function_RU(parameters, amm_instance_, params):
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
     # Calculate the CVaR of the final return distribution
+    global cvar
     cvar = calculate_cvar_RU(VaR, -log_returns, alpha=params['alpha'])
-
-    # logging.info(f"Random number:{np.random.normal()}")
-    # logging.info(f"Current initial_dist: {initial_pools_dist}")
-    # logging.info(f"Current CVaR: {cvar}")
-    # logging.info(f"Current probability: {probability}")
-    # logging.info(f"Current VaR:{VaR}")
-    # logging.info(f"Current returns mean:{np.mean(log_returns)}\n")
 
     return cvar
 
@@ -147,7 +143,7 @@ def constraint_2(x):
     return probability - 0.7
 
 def constraint_3(x):
-    return x[-params['N_pools']:]
+    return x[-params['N_pools']:] - 1e-9
 
 def constraint_4(x):
     global log_returns
@@ -179,7 +175,11 @@ def optimize_distribution(params, method):
     constraints = [{'type': 'eq', 'fun': constraint_1},
                 {'type': 'ineq', 'fun': constraint_2}]
                 #{'type': 'ineq', 'fun': constraint_3}]
-    bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+    # Here I have set the lower bound to 1e-6 due to an error occuring during
+    # the swap_and_mint method of the amm class. The error is due to the fact
+    # that the swap_and_mint method tries to swap 0 y coins, which is not possible
+    # (the submission ratio x/y goes to inf).
+    bounds_initial_dist = [(1e-6, 1) for i in range(params['N_pools'])]
     bounds = [(0, 0.1), *bounds_initial_dist]
     
     # Instantiate the amm class
@@ -187,11 +187,10 @@ def optimize_distribution(params, method):
     
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        current_cvar = objective_function_RU(x, amm_instance, params)
         logging.info(f"Current initial_dist: {x[-params['N_pools']:]}")
         logging.info(f"Current probability: {probability}")
         logging.info(f"Current VaR:{x[0]}")
-        logging.info(f"Current CVaR: {current_cvar}")
+        logging.info(f"Current CVaR: {cvar}")
         logging.info(f"Current returns mean:{np.mean(log_returns)}\n")
 
     # The following while loop is used to check if the initial distribution of wealth
@@ -277,7 +276,7 @@ def simulation_plots(res, params):
     plt.figure(figsize=(10, 8), tight_layout=True)
     plt.hist(log_returns, bins=50, alpha=0.7)
     plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
-    plt.axvline(-var, color='b', linestyle='dashed', linewidth=1, label='VaR')
+    plt.axvline(-var_emp, color='b', linestyle='dashed', linewidth=1, label='VaR')
     plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$', alpha=0)
     plt.xlabel('Time')
     plt.ylabel('Returns')
