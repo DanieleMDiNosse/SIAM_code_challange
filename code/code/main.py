@@ -12,9 +12,8 @@ args = parser.parse_args()
 
 _ = logging_config('opt')
 np.random.seed(params['seed'])
-res = optimize_distribution(params, args.method)
+# res = optimize_distribution(params, args.method)
 
 if args.simulate == 1:
-    # res = np.array([0.11057456, 0.34389733, 0.17021943, 0.13990844, 0.22973344,
-    #    0.0056668 ])
+    res = np.array([0.15176591, 0.15726523, 0.15679221, 0.1222044,  0.19143423, 0.22053802])
     simulation_plots(res, params)
