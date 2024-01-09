@@ -7,6 +7,7 @@ Created on Fri Nov  21 17:26:27 2023
 import numpy as np
 from collections import deque
 import copy
+import logging
 
 from tqdm import tqdm
 
@@ -66,6 +67,7 @@ class amm():
 
         # Compute the amount of token-Y you receive from each pool
         y = x*self.Ry*(1-self.phi) / (self.Rx + x*(1-self.phi))
+        logging.info(f'x: {x}, y: {y}')
 
         # If quote is False, then update the pool states
         if quote is False:
@@ -121,7 +123,7 @@ class amm():
             The amount of LP tokens you receive from each pool.
 
         """
-
+        logging.info(f'Reserves: {self.Rx}, {self.Ry}')
         for k in range(len(self.Rx)):
             assert np.abs(((x[k]/y[k])-self.Rx[k]/self.Ry[k])) < 1e-9, "pool " + str(k) + f" has incorrect submission of tokens:\n\t{x[k]},{y[k]},{self.Rx[k]},{self.Ry[k]}"
 

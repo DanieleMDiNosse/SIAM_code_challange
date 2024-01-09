@@ -114,7 +114,8 @@ def constraint_2(x):
     return probability - params['q']
 
 def constraint_3(x):
-    return 0.05 - cvar
+    global log_returns
+    return 0.18 - np.std(log_returns)
 
 def optimize_distribution(params, method):
     """
@@ -170,7 +171,7 @@ def optimize_distribution(params, method):
     logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
     # Optimization procedure
-    logging.info(f"Minimization of expected loss with cvar constraint")
+    logging.info(f"Minimization of expected loss with std constraint")
     logging.info(f"Optimization method: {method}")
     logging.info("Starting...")
     logging.info(f"batch size:\n\t{params['batch_size']}\n")
