@@ -11,10 +11,10 @@ parser.add_argument('-m', '--method', type=str, default='SLSQP', help='Optimizat
 args = parser.parse_args()
 
 _ = logging_config('opt')
+get_current_git_branch()
 np.random.seed(params['seed'])
+exit()
 res = optimize_distribution(params, args.method)
 
 if args.simulate == 1:
-#     res = np.array([2.48080213e-01, 2.02686541e-01, 2.00305892e-01, 2.11960272e-01,
-#  1.36966020e-01, 1.07737608e-06])
     simulation_plots(res, params)
