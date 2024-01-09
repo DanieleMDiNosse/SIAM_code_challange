@@ -54,7 +54,8 @@ def calculate_cvar(log_returns):
     return cvar, var
 
 def cvar_unconstrained(cvar, initial_pools_dist):
-    lambda1, lambda2, lambda3, lambda4 = 10, 10, 10, 10
+    lambda1, lambda2, lambda3, lambda4 = 200*np.ones(4)
+    global penalties
     penalties = lambda1 * (np.sum(initial_pools_dist) - 1) + lambda2 * max(0, params['q'] - probability) + lambda3 * max(0, cvar - 0.05) + lambda4 * np.sum(np.maximum(-initial_pools_dist, 0))
     return cvar + penalties
 
@@ -123,9 +124,10 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstrained
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
     if unconstrained == True:
-        cvar = cvar_unconstrained(cvar, initial_pools_dist)
-
-    return cvar
+        cvar_pen = cvar_unconstrained(cvar, initial_pools_dist)
+        return cvar_pen
+    else:
+        return cvar
 
 def constraint_1(x):
     return np.sum(x) - 1
@@ -166,6 +168,10 @@ def optimize_distribution(params, method, unconstraint=False):
         # current_cvar, _ = calculate_cvar(log_returns)
         logging.info(f"Current initial_dist: {x} -> Sum: {np.sum(x)}")
         logging.info(f"Current probability: {probability}")
+        try:
+            logging.info(f'Penalities: {penalties}')
+        except:
+            pass
         logging.info(f'Mean loss: {np.mean(-log_returns)}')
         logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")
         logging.info(f"Current CVaR: {cvar}\n")
