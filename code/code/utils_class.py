@@ -13,6 +13,9 @@ class PortfolioOptimizer:
         self.log_returns = 0
         self.probability = 0
         self.cvar = 0
+        self.lambda1 = 10
+        self.lambda2 = 10
+        self.x = np.zeros(params['N_pools'])
 
     @staticmethod
     def logging_config(filename):
@@ -24,14 +27,15 @@ class PortfolioOptimizer:
         return None
 
     @staticmethod
-    def calculate_cvar(log_returns):
+    def calculate_cvar(log_returns, x, lambda1, lambda2, probability):
         """
         Calculate the CVaR of a set of returns.
         """
 
         var = np.quantile(-log_returns, params['alpha'])
         cvar = np.mean(-log_returns[-log_returns >= var])
-        return cvar, var
+        cvar_w_penalty = cvar + lambda1 * (np.sum(np.abs(x)) - 1) + lambda2 * max(0, (probability - params['q']))
+        return cvar_w_penalty, cvar, var
 
     @staticmethod
     def calculate_log_returns(x0, final_pools_dists, l):
@@ -49,7 +53,6 @@ class PortfolioOptimizer:
         for k in range(params['batch_size']):
             x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
 
-
         # Calculate the initial wealth
         x_0 = np.sum(x0)
 
@@ -61,7 +64,7 @@ class PortfolioOptimizer:
 
     def portfolio_evolution(self, initial_pools_dist, amm_instance_, params):
         # Avoid the modification of the amm instance every function call
-        # amm_instance = copy.deepcopy(amm_instance_)
+        self.x = initial_pools_dist
         amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
         # Check if there is a negative weight
         if np.any(initial_pools_dist < 0):
@@ -88,18 +91,12 @@ class PortfolioOptimizer:
         self.log_returns = self.calculate_log_returns(X0, final_pools_dists, l)
 
         # Compute the cvar
-        self.cvar, _ = self.calculate_cvar(self.log_returns)
+        cvar_w_penalty, self.cvar, _ = self.calculate_cvar(self.log_returns, self.x, self.lambda1, self.lambda2, self.probability)
 
         # Compute the probability of having a return greater than 0.05
         self.probability = np.mean(self.log_returns > 0.05)
 
-        return self.cvar
-
-    def constraint_1(self, x):
-        return np.sum(x) - 1
-
-    def constraint_2(self, x):
-        return self.probability - params['q']
+        return cvar_w_penalty
 
     def optimize_distribution(self, params, method):
         # ... (similar to before, but replace global variables with self.attributes)
@@ -117,9 +114,7 @@ class PortfolioOptimizer:
         """
         np.random.seed(params['seed'])
 
-        # Constraints and bounds
-        constraints = [{'type': 'eq', 'fun': self.constraint_1},
-                    {'type': 'ineq', 'fun': self.constraint_2}]
+        # Bounds
         bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
 
         # Instantiate the amm class
@@ -141,6 +136,7 @@ class PortfolioOptimizer:
             # Initial distribution of wealth across pools
             random_vector = np.random.uniform(0, 100, params['N_pools'])
             initial_guess = random_vector / np.sum(random_vector)
+            self.x = initial_guess
             try:
                 amm_instance.swap_and_mint(initial_guess*params['x_0'], quote=True)
                 cond = False
@@ -149,12 +145,12 @@ class PortfolioOptimizer:
         logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
         # Optimization procedure
-        logging.info(f"Minimization of vanilla cVaR")
+        logging.info(f"Minimization of vanilla cVaR with penalties")
         logging.info(f"Optimization method: {method}")
         logging.info("Starting...")
         logging.info(f"batch size:\n\t{params['batch_size']}\n")
         result = minimize(self.portfolio_evolution, initial_guess, args=(amm_instance, params),
-                    method=method, constraints=constraints, bounds=bounds_initial_dist, callback=callback_function)
+                    method=method, bounds=bounds_initial_dist, callback=callback_function)
 
         logging.info(f"Results:\n\t{result}")
 
@@ -184,7 +180,7 @@ class PortfolioOptimizer:
         # Calculate the log returns, cvar, and var
         log_returns = self.calculate_log_returns(X0, XT, l)
         probability = np.mean(log_returns > 0.05)
-        cvar, var = self.calculate_cvar(log_returns)
+        cvar_w_penalty, cvar, var = self.calculate_cvar(log_returns, res, self.lambda1, self.lambda2, probability)
 
         fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
         i = np.random.randint(0, params['N_pools'])
