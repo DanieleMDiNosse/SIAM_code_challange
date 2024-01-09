@@ -21,6 +21,17 @@ from params import params
 import logging
 import os
 import copy
+import subprocess
+
+def get_current_git_branch():
+    try:
+        output = subprocess.check_output(["git", "branch"], text=True)
+        branch_name = output.strip()
+        logging.info(f"Current branch:\n{branch_name}")
+        return branch_name
+    except subprocess.CalledProcessError as e:
+        logging.info(f"Error: {e}")
+        return None
 
 def logging_config(filename):
     if os.getenv("PBS_JOBID") != None:
@@ -179,7 +190,7 @@ def optimize_distribution(params, method):
     # the swap_and_mint method of the amm class. The error is due to the fact
     # that the swap_and_mint method tries to swap 0 y coins, which is not possible
     # (the submission ratio x/y goes to inf).
-    bounds_initial_dist = [(1e-6, 1) for i in range(params['N_pools'])]
+    bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
     bounds = [(0, 0.1), *bounds_initial_dist]
     
     # Instantiate the amm class
