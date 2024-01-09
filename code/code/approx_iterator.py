@@ -12,27 +12,22 @@ from utils import calculate_cvar, calculate_log_returns
 
 '''
 Summary of the best results
-MINIMUM approx
-[0.11057456, 0.34389733, 0.17021943, 0.13990844, 0.22973344, 0.0056668]
-cvar = 0.029587175946245044
+MINIMUM rgs
+cvar = 
 
 Top 5%
-cvar = 0.030439706303845397
+cvar = 
 
 Top 1%
-cvar = 0.03004233448060176
+cvar = 
 
 Equi-weighted
-cvar = 0.03121627321033861
-21.78%
+cvar = 0.005193897750906791
 
-Mio III
-cvar = 0.030728284345139727
-10.02%
 
 Mio IV
-cvar = 0.03072288693483003
-9.94%
+cvar = 0.004570863305932949
+
 '''
 
 OUTPUT_FOLDER = '/home/garo/Desktop/Lavoro_Studio/[SIAG] Challenge/SIAM_code_challange/code/temp_results'
@@ -84,7 +79,7 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
     # Compute the log returns
     log_ret = calculate_log_returns(xs_0, end_pools, l)
 
-    constraint= len(log_ret[ log_ret>params['zeta'] ]) / len(log_ret) - 0.7
+    constraint= len(log_ret[ log_ret>params['zeta'] ]) / len(log_ret) - params['q']
     if constraint >= 0:
         cvar = calculate_cvar(log_ret) #If the constraint is satisfied, return CVaR
     else: #Otherwise, return np.inf or np.nan
@@ -102,7 +97,13 @@ def pool_initializer(pars):
     pools = amm(Rx=Rx0, Ry=Ry0, phi=phi)
     return pools
 
-def market_simulator(pars, theta, rho):
+def market_simulator(pars, theta_, rho):
+    # Eventually fill the theta vector
+    if len(theta_) < params['N_pools']:
+        theta = np.array([*theta_, 1-np.sum(np.abs(theta_))])
+    else:
+        theta = theta_
+
     np.random.seed(pars['seed']) #Fix the seed for the next operations
     pools = pool_initializer(pars) #Initialize the pools
 
@@ -134,7 +135,17 @@ def theta_filler(pars, theta, theta_adj, rho):
 
     return pools.swap_and_mint(xs_0)
 
-def approx2minimize(theta_adj, pars, theta, rho, end_pools):
+def approx2minimize(theta_adj_, pars, theta_, rho, end_pools):
+    # Eventually fill the theta vector
+    if len(theta_adj_) < params['N_pools']:
+        theta_adj = np.array([*theta_adj_, 1-np.sum(np.abs(theta_adj_))])
+    else:
+        theta_adj = theta_adj_
+    if len(theta_) < params['N_pools']:
+        theta = np.array([*theta_, 1-np.sum(np.abs(theta_))])
+    else:
+        theta = theta_
+
     #theta_adj = np.array(theta_adj) / np.sum(theta_adj) #Regularize the weights
     l = theta_filler(pars, theta, theta_adj, rho) #Compute the quote
 
@@ -356,11 +367,14 @@ no progressive increasing in the tolerance required to minimize
 from scipy.optimize import minimize, LinearConstraint
 
 # Define algorithm hyperparameters
-n_pools = 6
+n_pools = len(params['Rx0'])
 rho=0.7
 theta0 = np.array([1/n_pools]*n_pools) 
 max_rep = 6
 min_seed = 2
+int_tol = 1e-12
+ext_tol = 1e-6
+max_cte = 2
 
 #Set the constraint for the minimization algorithm
 constr = LinearConstraint(
@@ -372,6 +386,8 @@ constr = LinearConstraint(
 flag = True #Initialize the exit flag
 rho_val = 1 #Initialize rho value
 Thetas_record = list() #Store theta for future analysis
+exit_count = 0
+theta0_old = theta0
 
 for _ in range(20):
     sim_pools = market_simulator(params, theta0, rho_val) #Simulate the market, starting point theta0
@@ -385,7 +401,7 @@ for _ in range(20):
         res = minimize(
             lambda x: approx2minimize(x, params, theta0,
                                       rho_val, copy.deepcopy(sim_pools)),
-            theta, method='SLSQP', constraints=constr, tol=1e-12, options={'disp':False}
+            theta, method='SLSQP', constraints=constr, tol=int_tol, options={'disp':False}
             ) #Minimize to find the next theta step
         theta = np.array(res.x)
         temp_flag = res.status
@@ -401,10 +417,18 @@ for _ in range(20):
     rho_val *= rho
     Thetas_record.append(theta0)
     print(theta0)
+    # Check the exit condition
+    if np.sum(np.abs(theta0-theta0_old)) <= ext_tol:
+        exit_count += 1
+        if exit_count >= max_cte:
+            break
+    else:
+        exit_count = 0
+    theta0_old = theta0
 
 '''
-theta0 = [0.17755273, 0.15786854, 0.14839669, 0.18430014, 0.23005041, 0.10183149]
-cvar = 0.03072288693483003
+theta0 = np.array([0.17415879, 0.16584002, 0.1529393 , 0.18366579, 0.22503606, 0.09836005])
+cvar = 0.004570863305932949
 '''
 
 #%% V version
@@ -546,8 +570,88 @@ for _ in range(20):
     print(theta0)
 
 '''
-theta0 = [0.17761412, 0.15792891, 0.14853606, 0.18425704, 0.229572, 0.10209188]
-cvar = 0.030723149736664963
+theta0 = 
+cvar = 
+'''
+
+#%% VII version
+
+'''
+rho decreases exponentially; rho=0.7
+theta0 is equi-weighted
+theta_approx is initialized to the current theta0
+no early stopping strategy
+no progressive increasing in the tolerance required to minimize
+'''
+
+from scipy.optimize import minimize, LinearConstraint
+
+# Define algorithm hyperparameters
+n_pools = len(params['Rx0'])
+rho=0.7
+theta0 = np.array([1/n_pools]*(n_pools-1)) 
+max_rep = 6
+min_seed = 2
+int_tol = 1e-12
+ext_tol = 1e-6
+max_cte = 2
+
+#Set the constraint for the minimization algorithm
+constr = LinearConstraint(
+    np.concatenate([np.eye(n_pools), np.ones((1, n_pools))], axis=0),
+    np.concatenate([np.ones(n_pools)*1e-5, [1]], axis=0),
+    np.concatenate([np.ones(n_pools), [1]], axis=0),
+    keep_feasible=True)
+
+constraints = [{'type': 'ineq', 'fun': lambda x: 1 - np.sum(x)}]
+bounds = [(0, 1) for i in range(params['N_pools']-1)]
+
+flag = True #Initialize the exit flag
+rho_val = 1 #Initialize rho value
+Thetas_record = list() #Store theta for future analysis
+exit_count = 0
+theta0_old = theta0
+
+for _ in range(20):
+    sim_pools = market_simulator(params, theta0, rho_val) #Simulate the market, starting point theta0
+
+    # Find the optimal step with the interior minimization
+    np.random.seed(min_seed)
+    theta = theta0
+    temp_flag, it = 1, 0
+
+    while (temp_flag!=0) and (it < max_rep):
+        res = minimize(
+            lambda x: approx2minimize(x, params, theta0,
+                                      rho_val, copy.deepcopy(sim_pools)),
+            theta, method='trust-constr', constraints=constraints,
+            bounds=bounds, tol=int_tol, options={'disp':False}
+            ) #Minimize to find the next theta step
+        theta = np.array(res.x)
+        temp_flag = res.status
+        #print(theta)
+        #print(temp_flag)
+        it += 1
+
+    print(temp_flag)
+    print(rho_val)
+
+    # Update variables
+    theta0 = theta0*(1-rho_val) + theta*rho_val
+    rho_val *= rho
+    Thetas_record.append(theta0)
+    print(theta0)
+    if np.sum(np.abs(theta0-theta0_old)) <= ext_tol:
+        exit_count += 1
+        if exit_count >= max_cte:
+            break
+    else:
+        exit_count = 0
+    theta0_old = theta0
+
+'''
+theta0 = np.array([])
+cvar = 
 '''
 
 # %% SPACE
