@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from amm import amm
 from params import params
 import logging
+import datetime
 import os
 
 def logging_config(filename):
@@ -27,8 +28,9 @@ def logging_config(filename):
         job_id = os.getenv("PBS_JOBID")
     else:
         job_id = os.getpid()
-
     logging.basicConfig(filename=f'output/{filename}_{job_id}.log', format='%(message)s', level=logging.INFO)
+    # Log the time
+    logging.info(f"Time: {datetime.datetime.now()}")
     return None
 
 def calculate_cvar(log_returns):
@@ -83,6 +85,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params):
         l = amm_instance.swap_and_mint(X0)
     except AssertionError as e:
         logging.info(f"Error: {e}")
+        return 1e6
 
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
@@ -134,7 +137,7 @@ def optimize_distribution(params, method):
     # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
                 {'type': 'ineq', 'fun': constraint_2}]
-    bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+    bounds_initial_dist = [(1e-8, 1) for i in range(params['N_pools'])]
 
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
@@ -163,11 +166,12 @@ def optimize_distribution(params, method):
     logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
     # Optimization procedure
+    options = {'ftol': 1e-6, 'maxiter': 200}
     logging.info(f"Minimization of vanilla cVaR")
     logging.info(f"Optimization method: {method}")
     logging.info("Starting...")
     result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
-                method=method, constraints=constraints, bounds=bounds_initial_dist, callback=callback_function)
+                method=method, constraints=constraints, bounds=bounds_initial_dist, callback=callback_function, options=options)
 
     logging.info(f"Results:\n\t{result}")
 
