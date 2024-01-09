@@ -8,14 +8,13 @@ import argparse
 parser = argparse.ArgumentParser(description='Optimize the initial wealth distribution')
 parser.add_argument('-s', '--simulate', type=int, default=0, help='Simulate the model with the optimal initial wealth distribution (1) or not (0)')
 parser.add_argument('-m', '--method', type=str, default='SLSQP', help='Optimization method for scipy.minimize')
+parser.add_argument('-uc', '--unconstraint', action='store_true', help='Choose between constrained or unconstrained optimization')
 args = parser.parse_args()
 
 _ = logging_config('opt')
 get_current_git_branch()
 np.random.seed(params['seed'])
-res = optimize_distribution(params, args.method)
+res = optimize_distribution(params, args.method, args.unconstraint)
 
 if args.simulate == 1:
-#     res = np.array([2.48080213e-01, 2.02686541e-01, 2.00305892e-01, 2.11960272e-01,
-#  1.36966020e-01, 1.07737608e-06])
     simulation_plots(res, params)

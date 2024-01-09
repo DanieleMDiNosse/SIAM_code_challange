@@ -74,7 +74,7 @@ def calculate_log_returns(x0, final_pools_dists, l):
 
     return log_returns
 
-def portfolio_evolution(initial_pools_dist, amm_instance_, params):
+def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstraint=False):
     # Avoid the modification of the amm instance every function call
     # amm_instance = copy.deepcopy(amm_instance_)
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
@@ -82,7 +82,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params):
     # Check if there is a negative weight
     if np.any(initial_pools_dist < 0):
         logging.info(f'Negative weight: {initial_pools_dist}')
-        initial_pools_dist = np.abs(initial_pools_dist)
+        return 1000
 
     # Compute the actual tokens for each pool. The initial_pools_dist are the
     # weights of the pools. We need to multiply them by the initial wealth
@@ -114,7 +114,12 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params):
     global var
     cvar, var = calculate_cvar(log_returns)
 
-    return np.mean(-log_returns)
+    if unconstraint == True:
+        lambda1, lambda2, lambda3 = 10, 10, 10
+        penalities = lambda1 * (np.sum(initial_pools_dist) - 1) + lambda2 * max(0, params['q'] - probability) + lambda3 * max(0, cvar - 0.05)
+        return np.mean(-log_returns) + penalities
+    else:
+        return np.mean(-log_returns)
 
 def constraint_1(x):
     return np.sum(x) - 1
@@ -126,7 +131,7 @@ def constraint_2(x):
 def constraint_3(x):
     return 0.05 - cvar
 
-def optimize_distribution(params, method):
+def optimize_distribution(params, method, unconstraint=False):
     """
     Optimizes the distribution of wealth across liquidity pools to minimize CVaR,
     conditioned to P[final return > 0.05]>0.7.
@@ -180,12 +185,18 @@ def optimize_distribution(params, method):
     logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
     # Optimization procedure
-    logging.info(f"Minimization of expected loss with cvar constraint")
-    logging.info(f"Optimization method: {method}")
     logging.info("Starting...")
     logging.info(f"batch size:\n\t{params['batch_size']}\n")
-    result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
-                method=method, constraints=constraints, bounds=bounds_initial_dist, callback=callback_function)
+    if unconstraint == False:
+        logging.info(f"Minimization of expected loss with cvar constraint")
+        logging.info(f"Optimization method: {method}")
+        result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
+                method=method, bounds=bounds_initial_dist, constraints=constraints, callback=callback_function)
+    else:
+        logging.info(f"Unconstrained minimization of expected loss")
+        logging.info(f"Optimization method: {method}")
+        result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params, True),
+                    method=method, callback=callback_function)
 
     logging.info(f"Results:\n\t{result}")
 
