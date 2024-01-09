@@ -21,7 +21,18 @@ from amm import amm
 from params import params
 import logging
 import datetime
+import subprocess
 import os
+
+def get_current_git_branch():
+    try:
+        output = subprocess.check_output(["git", "branch"], text=True)
+        branch_name = output.strip()
+        logging.info(f"Current branch:\n{branch_name}")
+        return branch_name
+    except subprocess.CalledProcessError as e:
+        logging.info(f"Error: {e}")
+        return None
 
 def logging_config(filename):
     if os.getenv("PBS_JOBID") != None:

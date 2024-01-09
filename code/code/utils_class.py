@@ -18,15 +18,6 @@ class PortfolioOptimizer:
         self.x = np.zeros(params['N_pools'])
 
     @staticmethod
-    def logging_config(filename):
-        if os.getenv("PBS_JOBID") != None:
-            job_id = os.getenv("PBS_JOBID")
-        else:
-            job_id = os.getpid()
-        logging.basicConfig(filename=f'output/{filename}_{job_id}.log', format='%(message)s', level=logging.INFO)
-        return None
-
-    @staticmethod
     def calculate_cvar(log_returns, x, lambda1, lambda2, probability):
         """
         Calculate the CVaR of a set of returns.
@@ -79,6 +70,7 @@ class PortfolioOptimizer:
             l = amm_instance.swap_and_mint(X0)
         except AssertionError as e:
             logging.info(f"Error: {e}")
+            return 1e6
 
         # Simulate the evolution of the pools (scenario simulation)
         np.random.seed(params['seed'])
@@ -115,7 +107,7 @@ class PortfolioOptimizer:
         np.random.seed(params['seed'])
 
         # Bounds
-        bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+        bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
 
         # Instantiate the amm class
         amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
@@ -123,7 +115,7 @@ class PortfolioOptimizer:
         # Callback function to print the current CVaR and the current parameters
         def callback_function(x, *args):
             # current_cvar, _ = calculate_cvar(log_returns)
-            logging.info(f"Current initial_dist: {x}")
+            logging.info(f"Current initial_dist: {x} -> Sum: {np.sum(x)}")
             logging.info(f"Current probability: {self.probability}")
             logging.info(f'Mean loss: {np.mean(-self.log_returns)}')
             logging.info(f"Current VaR:{np.quantile(-self.log_returns, params['alpha'])}")

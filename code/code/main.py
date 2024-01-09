@@ -13,11 +13,11 @@ parser.add_argument('-m', '--method', type=str, default='SLSQP', help='Optimizat
 args = parser.parse_args()
 
 _ = logging_config('opt')
+get_current_git_branch()
 np.random.seed(params['seed'])
 res = optimize_distribution(params, args.method)
 
 # optimizer = PortfolioOptimizer()
-# optimizer.logging_config('opt')
 # res = optimizer.optimize_distribution(params, args.method)
 logging.info(f'Time: {datetime.datetime.now()}')
 
