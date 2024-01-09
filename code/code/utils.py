@@ -148,7 +148,7 @@ def optimize_distribution(params, method):
     # Constraints and bounds
     constraints = [{'type': 'eq', 'fun': constraint_1},
                 {'type': 'ineq', 'fun': constraint_2}]
-    bounds_initial_dist = [(1e-8, 1) for i in range(params['N_pools'])]
+    bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
 
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
