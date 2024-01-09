@@ -20,7 +20,18 @@ import matplotlib.pyplot as plt
 from amm import amm
 from params import params
 import logging
+import subprocess
 import os
+
+def get_current_git_branch():
+    try:
+        output = subprocess.check_output(["git", "branch"], text=True)
+        branch_name = output.strip()
+        logging.info(f"Current branch:\n{branch_name}")
+        return branch_name
+    except subprocess.CalledProcessError as e:
+        logging.info(f"Error: {e}")
+        return None
 
 def logging_config(filename):
     if os.getenv("PBS_JOBID") != None:
@@ -53,9 +64,7 @@ def calculate_log_returns(x0, final_pools_dists, l):
     # for each path. This is done by the burn_and_swap method of the amm class.
     # The method takes all the LP tokens, burn them and swap coin-Y for coin-X.
     for k in range(params['batch_size']):
-        # logging.info(f'random number: {np.random.normal()}')
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
-        # logging.info(f'random number: {np.random.normal()}')
 
     # Calculate the initial wealth
     x_0 = np.sum(x0)
@@ -84,6 +93,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params):
         l = amm_instance.swap_and_mint(X0)
     except AssertionError as e:
         logging.info(f"Error: {e}")
+        return 1000
 
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
@@ -141,14 +151,14 @@ def optimize_distribution(params, method):
     constraints = [{'type': 'eq', 'fun': constraint_1},
                 {'type': 'ineq', 'fun': constraint_2},
                 {'type': 'ineq', 'fun': constraint_3}]
-    bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+    bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
 
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
 
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        logging.info(f"Current initial_dist: {x}")
+        logging.info(f"Current initial_dist: {x} -> Sum: {np.sum(x)}")
         logging.info(f"Current probability: {probability}")
         logging.info(f'Mean ret: {np.mean(log_returns)}')
         logging.info(f'Std ret: {np.std(log_returns)}')
