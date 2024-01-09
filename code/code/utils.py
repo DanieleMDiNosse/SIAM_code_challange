@@ -28,7 +28,7 @@ def get_current_git_branch():
     try:
         output = subprocess.check_output(["git", "branch"], text=True)
         branch_name = output.strip()
-        logging.info(f"Current branch:\n{branch_name}")
+        logging.info(f"Current branch:\n{branch_name}\n")
         return branch_name
     except subprocess.CalledProcessError as e:
         logging.info(f"Error: {e}")
@@ -41,7 +41,7 @@ def logging_config(filename):
         job_id = os.getpid()
     logging.basicConfig(filename=f'output/{filename}_{job_id}.log', format='%(message)s', level=logging.INFO)
     # Log the time
-    logging.info(f"Time: {datetime.datetime.now()}")
+    logging.info(f"Time: {datetime.datetime.now()}\n")
     return None
 
 def calculate_cvar(log_returns):
@@ -156,7 +156,7 @@ def optimize_distribution(params, method):
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
         # current_cvar, _ = calculate_cvar(log_returns)
-        logging.info(f"Current initial_dist: {x}")
+        logging.info(f"Current initial_dist: {x} -> Sum: {np.sum(x)}")
         logging.info(f"Current probability: {probability}")
         logging.info(f'Mean loss: {np.mean(-log_returns)}')
         logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")

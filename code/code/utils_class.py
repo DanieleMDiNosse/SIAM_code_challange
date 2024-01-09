@@ -13,7 +13,7 @@ class PortfolioOptimizer:
         self.log_returns = 0
         self.probability = 0
         self.cvar = 0
-        self.lambda1 = 10
+        self.lambda1 = 20
         self.lambda2 = 10
         self.x = np.zeros(params['N_pools'])
 
@@ -25,7 +25,7 @@ class PortfolioOptimizer:
 
         var = np.quantile(-log_returns, params['alpha'])
         cvar = np.mean(-log_returns[-log_returns >= var])
-        cvar_w_penalty = cvar + lambda1 * (np.sum(np.abs(x)) - 1) + lambda2 * max(0, (probability - params['q']))
+        cvar_w_penalty = cvar + lambda1 * (np.sum(np.abs(x)) - 1) + lambda2 * max(0, (params['q'] - probability)) + lambda2 * np.sum(np.maximum(0, -x))
         return cvar_w_penalty, cvar, var
 
     @staticmethod

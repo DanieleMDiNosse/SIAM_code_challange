@@ -15,14 +15,12 @@ args = parser.parse_args()
 _ = logging_config('opt')
 get_current_git_branch()
 np.random.seed(params['seed'])
-res = optimize_distribution(params, args.method)
+# res = optimize_distribution(params, args.method)
 
-# optimizer = PortfolioOptimizer()
-# res = optimizer.optimize_distribution(params, args.method)
+optimizer = PortfolioOptimizer()
+res = optimizer.optimize_distribution(params, args.method)
 logging.info(f'Time: {datetime.datetime.now()}')
 
 if args.simulate == 1:
-#     res = np.array([2.48080213e-01, 2.02686541e-01, 2.00305892e-01, 2.11960272e-01,
-#  1.36966020e-01, 1.07737608e-06])
     simulation_plots(res, params)
     # optimizer.simulation_plots(res, params)
