@@ -84,6 +84,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params):
         l = amm_instance.swap_and_mint(X0)
     except AssertionError as e:
         logging.info(f"Error: {e}")
+        return 1e6
 
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
@@ -142,7 +143,7 @@ def optimize_distribution(params, method):
     constraints = [{'type': 'eq', 'fun': constraint_1},
                 {'type': 'ineq', 'fun': constraint_2},
                 {'type': 'ineq', 'fun': constraint_3}]
-    bounds_initial_dist = [(0, 1) for i in range(params['N_pools'])]
+    bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
 
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
