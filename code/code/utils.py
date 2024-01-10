@@ -56,7 +56,7 @@ def calculate_cvar(log_returns):
 def cvar_unconstrained(cvar, initial_pools_dist, lambda1):
     lambda2, lambda3, lambda3 = 10*np.ones(3)
     global penalties
-    penalties = lambda1 * np.abs((np.sum(initial_pools_dist) - 1)) + lambda2 * max(0, params['q'] - probability) + lambda3 * np.sum(np.maximum(-initial_pools_dist, 0))
+    penalties = lambda1 * (np.sum(initial_pools_dist) - 1)**2 + lambda2 * max(0, params['q'] - probability) + lambda3 * np.sum(np.maximum(-initial_pools_dist, 0))
     return cvar + penalties
 
 def calculate_log_returns(x0, final_pools_dists, l):
@@ -154,10 +154,11 @@ def optimize_distribution(params, method, unconstraint=False):
     global log_returns
     log_returns, probability = 0, 0
 
-    # Constraints and bounds
+    # Constraints, bounds and options for the optimization
     constraints = [{'type': 'eq', 'fun': constraint_1},
                 {'type': 'ineq', 'fun': constraint_2}]
     bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
+    options = {'maxiter': 1000, 'ftol': 1e-8}
 
     # Instantiate the amm class
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
@@ -176,7 +177,7 @@ def optimize_distribution(params, method, unconstraint=False):
     
     def callback_lambda_update(x, *args):
         global lambda1
-        if np.abs(np.sum(x) - 1) < 1e-3:
+        if np.abs(np.sum(x) - 1) < 1e-4:
             lambda1 = lambda1 * 1.5
         logging.info(f"lambda1: {lambda1}")
     
@@ -204,7 +205,7 @@ def optimize_distribution(params, method, unconstraint=False):
         logging.info(f"Minimization of vanilla cVaR")
         logging.info(f"Optimization method: {method}")
         result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
-                method=method, bounds=bounds_initial_dist, constraints=constraints, callback=callback_function)
+                method=method, bounds=bounds_initial_dist, constraints=constraints, options=options, callback=callback_function)
     else:
         logging.info(f"Unconstrained minimization of vanilla cVaR")
         logging.info(f"Optimization method: {method}")
