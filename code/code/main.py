@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from utils import *
 from amm import amm
 from params import params
+import datetime
 import argparse
 
 parser = argparse.ArgumentParser(description='Optimize the initial wealth distribution')
@@ -15,6 +16,7 @@ _ = logging_config('opt')
 get_current_git_branch()
 np.random.seed(params['seed'])
 res = optimize_distribution(params, args.method, args.unconstraint)
+logging.info(f'Time: {datetime.datetime.now()}')
 
 if args.simulate == 1:
     simulation_plots(res, params)

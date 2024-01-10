@@ -21,13 +21,14 @@ from amm import amm
 from params import params
 import logging
 import subprocess
+import datetime
 import os
 
 def get_current_git_branch():
     try:
         output = subprocess.check_output(["git", "branch"], text=True)
         branch_name = output.strip()
-        logging.info(f"Current branch:\n{branch_name}")
+        logging.info(f"Current branch:\n\t{branch_name}\n")
         return branch_name
     except subprocess.CalledProcessError as e:
         logging.info(f"Error: {e}")
@@ -38,8 +39,8 @@ def logging_config(filename):
         job_id = os.getenv("PBS_JOBID")
     else:
         job_id = os.getpid()
-
     logging.basicConfig(filename=f'output/{filename}_{job_id}.log', format='%(message)s', level=logging.INFO)
+    logging.info(f'Time: {datetime.datetime.now()}')
     return None
 
 def calculate_cvar(log_returns):
@@ -76,7 +77,6 @@ def calculate_log_returns(x0, final_pools_dists, l):
 
 def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstraint=False):
     # Avoid the modification of the amm instance every function call
-    # amm_instance = copy.deepcopy(amm_instance_)
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
 
     # Check if there is a negative weight
@@ -98,10 +98,10 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstraint=
     # Simulate the evolution of the pools (scenario simulation). We simulate params['batch_size'] paths, 
     # hence we will have params['batch_size'] amount of returns at the end.
     np.random.seed(params['seed'])
-    # logging.info(f'random number: {np.random.normal()}')
+
     final_pools_dists, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
         kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
-    # logging.info(f'random number: {np.random.normal()}')
+
     # Calculate the log returns for each path
     global log_returns
     log_returns = calculate_log_returns(X0, final_pools_dists, l)
@@ -115,8 +115,10 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstraint=
     cvar, var = calculate_cvar(log_returns)
 
     if unconstraint == True:
-        lambda1, lambda2, lambda3 = 10, 10, 10
-        penalities = lambda1 * (np.sum(initial_pools_dist) - 1) + lambda2 * max(0, params['q'] - probability) + lambda3 * max(0, cvar - 0.05)
+        global lambda1
+        global lambda3
+        lambda1, lambda3, lambda2 = 10, 10, 100
+        penalities = lambda1 * np.abs((np.sum(initial_pools_dist) - 1)) + lambda2 * max(0, params['q'] - probability) + lambda3 * max(0, cvar - 0.04)
         return np.mean(-log_returns) + penalities
     else:
         return np.mean(-log_returns)
@@ -169,6 +171,21 @@ def optimize_distribution(params, method, unconstraint=False):
         logging.info(f'Std ret: {np.std(log_returns)}')
         logging.info(f"Current VaR: {var}")
         logging.info(f"Current CVaR: {cvar}\n")
+    
+    def callback_lambda_update(x, *args):
+        global lambda1
+        global lambda3
+        global cvar
+        if np.abs(np.sum(x) - 1) > 1e-3:
+            lambda1 = lambda1 * 1.5
+        if cvar - 0.004 > 0:
+            lambda3 = lambda3 * 1.2
+        logging.info(f"Current lambda1: {lambda1}")
+        logging.info(f"Current lambda3: {lambda3}\n")
+    
+    def wrapper_callback(x, *args):
+        callback_function(x, *args)
+        callback_lambda_update(x, *args)
 
     # The following while loop is used to check if the initial distribution of wealth
     # across pools is feasible. If it is not, a new one is generated.
@@ -185,18 +202,20 @@ def optimize_distribution(params, method, unconstraint=False):
     logging.info(f"Initial guess:\n\t{initial_guess}\n")
 
     # Optimization procedure
-    logging.info("Starting...")
-    logging.info(f"batch size:\n\t{params['batch_size']}\n")
     if unconstraint == False:
         logging.info(f"Minimization of expected loss with cvar constraint")
         logging.info(f"Optimization method: {method}")
+        logging.info("Starting...")
         result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
                 method=method, bounds=bounds_initial_dist, constraints=constraints, callback=callback_function)
     else:
         logging.info(f"Unconstrained minimization of expected loss")
         logging.info(f"Optimization method: {method}")
+        logging.info("Starting...")
+        global lambda1
+        global lambda3
         result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params, True),
-                    method=method, callback=callback_function)
+                    method=method, callback=wrapper_callback)
 
     logging.info(f"Results:\n\t{result}")
 
