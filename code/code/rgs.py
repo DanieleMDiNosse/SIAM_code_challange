@@ -8,28 +8,31 @@ import numpy as np
 from amm import amm
 from params import params
 from tqdm.auto import tqdm
+import multiprocessing as mp
 from utils import calculate_cvar, calculate_log_returns
 
 '''
-MINIMUM approx
-[0.11057456, 0.34389733, 0.17021943, 0.13990844, 0.22973344, 0.0056668]
-cvar = 0.029587175946245044
+Summary of the best results
+MINIMUM rgs
+cvar = 
 
 Top 5%
-cvar = 0.030439706303845397
+cvar = 
 
 Top 1%
-cvar = 0.03004233448060176
+cvar = 
 
 Equi-weighted
-cvar = 0.03121627321033861
-cvar_vals = np.array(opt_res['cvar'])
-100*len(cvar_vals[cvar_vals <= cvar]) / len(cvar_vals)
-21.78%
+cvar = 0.005193897750906791
 
-Mio Easy
-cvar = 0.030738017656835127
-10.22%
+
+Daniele
+cvar = 0.0036268
+
+
+Mio IV
+cvar = 0.004570863305932949
+
 '''
 
 OUTPUT_FOLDER = '/home/garo/Desktop/Lavoro_Studio/[SIAG] Challenge/SIAM_code_challange/code/temp_results'
@@ -77,38 +80,92 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
     # Compute the log returns
     log_ret = calculate_log_returns(xs_0, end_pools, l)
 
-    constraint= len(log_ret[ log_ret>params['zeta'] ]) / len(log_ret) - 0.7
+    constraint= len(log_ret[ log_ret>params['zeta'] ]) / len(log_ret) - params['q']
     if constraint >= 0:
-        cvar = calculate_cvar(log_ret) #If the constraint is satisfied, return CVaR
+        # If the constraint is satisfied, return VaR and CVaR
+        var = np.quantile(-log_ret, params['alpha'])
+        cvar = np.mean(-log_ret[-log_ret >= var])
+        cvar = np.mean(-log_ret[-log_ret >= var])
     else: #Otherwise, return np.inf or np.nan
         if ret_inf:
             cvar = np.nan
         else:
             cvar = np.inf
-    return constraint, cvar
+    return constraint, var, cvar
+
+def worker_process(params, start_seed, end_seed, folder):
+    worker_save_points, worker_save_cvar, worker_save_var, worker_save_con =\
+        list(), list(), list(), list()
+
+    for rgs_seed in range(start_seed, end_seed):
+        np.random.seed(rgs_seed)
+
+        #Randomly draw the vector of weights theta and refularize it to have sum=1
+        theta = list()
+        for _ in range(len(params['Rx0'])):
+            theta.append( np.random.uniform() )
+        theta = np.array(theta) / np.sum(theta)
+
+        worker_save_points.append(theta)
+        con, var, cvar = target_4_opt(theta, params, ret_inf=False)
+        worker_save_cvar.append( cvar )
+        worker_save_var.append( var )
+        worker_save_con.append( con )
+    
+    '''# Put results in output queue
+    output_queue.put((worker_save_points, worker_save_cvar,
+                      worker_save_var, worker_save_con))'''
+    
+    with open(f'{folder}/rgs_output{os.getpid()}.pickle', 'wb') as f:
+        pickle.dump({'points':worker_save_points,
+                    'cvar':worker_save_cvar,
+                    'var':worker_save_var,
+                    'constraint':worker_save_con}, f)
+    print('Fine', n_it)
 
 #%% Random Grid Search
 
+num_workers = 6
+seeds_per_launch = 12000
+seeds_per_worker = seeds_per_launch // num_workers
+
+'''output_queue = mp.Queue()'''
+
+for n_it in tqdm(range(1), 'Computing grid search...'):
+    # Create and start worker processes
+    workers = list()
+    for i in range(num_workers):
+        start_seed = seeds_per_launch*n_it + i * seeds_per_worker
+        end_seed = start_seed + seeds_per_worker
+        worker = mp.Process(target=worker_process,
+                            args=(params, start_seed, end_seed, OUTPUT_FOLDER))
+        workers.append(worker)
+        worker.start()
+
+    # Gather results from workers
+    for worker in workers:
+        worker.join()
+
 save_points = list() #Initialize lists of result
 save_cvar = list() 
+save_var = list() 
 save_con = list()
 
-# Iterate over the random seed
-for rgs_seed in tqdm(range(12000), desc='Random Grid Search'):
-    np.random.seed(rgs_seed)
+main_word = 'rgs_output'
+for file in os.listdir(OUTPUT_FOLDER):
+    if len(file) > len(main_word+'.pickle') and file[:len(main_word)] == main_word:
+        with open(f'{OUTPUT_FOLDER}/{file}', 'rb') as f:
+            worker_save_points, worker_save_cvar, worker_save_var, worker_save_con =\
+                pickle.load(f)
+        save_points.extend(worker_save_points)
+        save_cvar.extend(worker_save_cvar)
+        save_var.extend(worker_save_var)
+        save_con.extend(worker_save_con)
+        os.remove(f'{OUTPUT_FOLDER}/{file}')
 
-    #Randomly draw the vector of weights theta and refularize it to have sum=1
-    theta = list()
-    for _ in range(len(params['Rx0'])):
-        theta.append( np.random.uniform() )
-    theta = np.array(theta) / np.sum(theta)
-
-    save_points.append(theta)
-    con, cvar = target_4_opt(theta, params, ret_inf=False)
-    save_cvar.append( cvar )
-    save_con.append( con )
-
+# Save results
 with open(f'{OUTPUT_FOLDER}/rgs_output.pickle', 'wb') as f:
     pickle.dump({'points':save_points,
-                 'cvar':save_cvar,
-                 'constraint':save_con}, f)
+                'cvar':save_cvar,
+                'var':save_var,
+                'constraint':save_con}, f)

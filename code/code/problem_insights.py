@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from utils import calculate_cvar, calculate_log_returns, target_4_opt
 sns.set_theme()
 
-OUTPUT_FOLDER = 'output'
+OUTPUT_FOLDER = '/home/garo/Desktop/Lavoro_Studio/[SIAG] Challenge/SIAM_code_challange/code/temp_results'
 
 # %% Some plots to have an idea...
 
@@ -21,6 +21,7 @@ OUTPUT_FOLDER = 'output'
 with open(f'{OUTPUT_FOLDER}/rgs_output.pickle', 'rb') as f:
     opt_res = pickle.load(f)
     
+print(f'There are {100*np.isnan(opt_res["cvar"]).sum()/len(opt_res["cvar"])}% NaN')
 # Plot the cvar as a function of the constraint. I'm trying to understand
 #   whenever the constraint is active (i.e. cvar minimum is on the boundary con=0)
 
