@@ -117,7 +117,7 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstraint=
     if unconstraint == True:
         global lambda1
         global lambda3
-        lambda1, lambda3, lambda2 = 10, 10, 100
+        lambda2 = 100
         penalities = lambda1 * np.abs((np.sum(initial_pools_dist) - 1)) + lambda2 * max(0, params['q'] - probability) + lambda3 * max(0, cvar - 0.04)
         return np.mean(-log_returns) + penalities
     else:
@@ -214,6 +214,7 @@ def optimize_distribution(params, method, unconstraint=False):
         logging.info("Starting...")
         global lambda1
         global lambda3
+        lambda1, lambda3 = 10, 10
         result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params, True),
                     method=method, callback=wrapper_callback)
 
