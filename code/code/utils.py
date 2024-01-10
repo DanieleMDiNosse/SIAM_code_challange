@@ -53,10 +53,10 @@ def calculate_cvar(log_returns):
     cvar = np.mean(-log_returns[-log_returns >= var])
     return cvar, var
 
-def cvar_unconstrained(cvar, initial_pools_dist):
-    lambda1, lambda2, lambda3, lambda4 = 200*np.ones(4)
+def cvar_unconstrained(cvar, initial_pools_dist, lambda1):
+    lambda2, lambda3, lambda3 = 10*np.ones(3)
     global penalties
-    penalties = lambda1 * (np.sum(initial_pools_dist) - 1) + lambda2 * max(0, params['q'] - probability) + lambda3 * max(0, cvar - 0.05) + lambda4 * np.sum(np.maximum(-initial_pools_dist, 0))
+    penalties = lambda1 * np.abs((np.sum(initial_pools_dist) - 1)) + lambda2 * max(0, params['q'] - probability) + lambda3 * np.sum(np.maximum(-initial_pools_dist, 0))
     return cvar + penalties
 
 def calculate_log_returns(x0, final_pools_dists, l):
@@ -72,9 +72,7 @@ def calculate_log_returns(x0, final_pools_dists, l):
     # for each path. This is done by the burn_and_swap method of the amm class.
     # The method takes all the LP tokens, burn them and swap coin-Y for coin-X.
     for k in range(params['batch_size']):
-        # logging.info(f'random number: {np.random.normal()}')
         x_T[k] = np.sum(final_pools_dists[k].burn_and_swap(l))
-        # logging.info(f'random number: {np.random.normal()}')
 
     # Calculate the initial wealth
     x_0 = np.sum(x0)
@@ -124,7 +122,8 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstrained
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
 
     if unconstrained == True:
-        cvar_pen = cvar_unconstrained(cvar, initial_pools_dist)
+        global lambda1
+        cvar_pen = cvar_unconstrained(cvar, initial_pools_dist, lambda1)
         return cvar_pen
     else:
         return cvar
@@ -165,7 +164,6 @@ def optimize_distribution(params, method, unconstraint=False):
 
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
-        # current_cvar, _ = calculate_cvar(log_returns)
         logging.info(f"Current initial_dist: {x} -> Sum: {np.sum(x)}")
         logging.info(f"Current probability: {probability}")
         try:
@@ -175,6 +173,16 @@ def optimize_distribution(params, method, unconstraint=False):
         logging.info(f'Mean loss: {np.mean(-log_returns)}')
         logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")
         logging.info(f"Current CVaR: {cvar}\n")
+    
+    def callback_lambda_update(x, *args):
+        global lambda1
+        if np.abs(np.sum(x) - 1) < 1e-3:
+            lambda1 = lambda1 * 1.5
+        logging.info(f"lambda1: {lambda1}")
+    
+    def wrapper_callback(x, *args):
+        callback_function(x, *args)
+        callback_lambda_update(x, *args)
 
     # The following while loop is used to check if the initial distribution of wealth
     # across pools is feasible. If it is not, a new one is generated.
@@ -200,8 +208,10 @@ def optimize_distribution(params, method, unconstraint=False):
     else:
         logging.info(f"Unconstrained minimization of vanilla cVaR")
         logging.info(f"Optimization method: {method}")
+        global lambda1
+        lambda1 = 10
         result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params, True),
-                    method=method, callback=callback_function)
+                    method=method, callback=wrapper_callback)
 
     logging.info(f"Results:\n\t{result}")
 
