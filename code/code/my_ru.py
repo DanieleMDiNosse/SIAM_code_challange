@@ -52,8 +52,7 @@ while cond == True:
     except ValueError as e:
         print(f"Error: {e}")
 
-options = {'maxiter': 1000, 'ftol': 1e-8}
 # Optimization procedure
-result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
+result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params), tol=1e-6,
         method='SLSQP', bounds=bounds_initial_dist, constraints=constraints, options=options)
 print(result)
