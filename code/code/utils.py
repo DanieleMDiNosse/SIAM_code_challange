@@ -106,7 +106,6 @@ def calculate_log_returns(x0, final_pools_dists, l):
 
 def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstrained=False):
     # Avoid the modification of the amm instance every function call
-    # amm_instance = copy.deepcopy(amm_instance_)
     amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
     # Check if there is a negative weight
     if np.any(initial_pools_dist < 0):
@@ -178,8 +177,8 @@ def optimize_distribution(params, method, unconstraint=False):
     log_returns, probability = 0, 0
 
     # Constraints, bounds and options for the optimization
-    constraints = [{'type': 'eq', 'fun': constraint_1},
-                {'type': 'ineq', 'fun': constraint_2}]
+    constraints = [{'type': 'eq', 'fun': constraint_1}]
+                # {'type': 'ineq', 'fun': constraint_2}]
     bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
     options = {'maxiter': 1000, 'ftol': 1e-8}
 
