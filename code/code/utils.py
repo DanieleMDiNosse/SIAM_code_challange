@@ -198,10 +198,11 @@ def optimize_distribution(params, method):
     
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
+        emp_cvar, emp_var = calculate_cvar(log_returns)
         logging.info(f"Current initial_dist: {x[-params['N_pools']:]}")
         logging.info(f"Current probability: {probability}")
-        logging.info(f"Current VaR:{x[0]}")
-        logging.info(f"Current CVaR: {cvar}")
+        logging.info(f"Current VaR:{x[0]}, empirical VaR:{emp_var}")
+        logging.info(f"Current CVaR: {cvar}, empirical CVaR: {emp_cvar}")
         logging.info(f"Current returns mean:{np.mean(log_returns)}\n")
 
     # The following while loop is used to check if the initial distribution of wealth
