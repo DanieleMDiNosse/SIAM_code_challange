@@ -24,6 +24,10 @@ import datetime
 import subprocess
 import os
 
+from scipy.stats import gaussian_kde
+from scipy.integrate import quad
+from scipy.optimize import minimize_scalar
+
 def get_current_git_branch():
     try:
         output = subprocess.check_output(["git", "branch"], text=True)
@@ -52,6 +56,24 @@ def calculate_cvar(log_returns):
     var = np.quantile(-log_returns, params['alpha'])
     cvar = np.mean(-log_returns[-log_returns >= var])
     return cvar, var
+
+def estimate_density_and_calculate_var_es(log_returns, params):
+    # Step 1: Estimate density
+    kde = gaussian_kde(log_returns)
+    alpha = 1 - params['alpha']
+
+    # Step 2: Calculate VaR using numerical methods
+    # Objective function to find the VaR
+    objective = lambda x: (kde.integrate_box_1d(-np.inf, x) - alpha)**2
+    result = minimize_scalar(objective, bounds=(min(log_returns), max(log_returns)), method='bounded')
+    VaR = result.x
+
+    # Step 3: Calculate Expected Shortfall (ES)
+    # Integrate over the range from -inf to VaR
+    cvar, _ = quad(lambda x: x * kde(x), -np.inf, VaR)
+    cvar = cvar / alpha
+
+    return -cvar
 
 def cvar_unconstrained(cvar, initial_pools_dist, lambda1):
     lambda2, lambda3, lambda3 = 10*np.ones(3)
@@ -114,8 +136,9 @@ def portfolio_evolution(initial_pools_dist, amm_instance_, params, unconstrained
     log_returns = calculate_log_returns(X0, final_pools_dists, l)
 
     # Compute the cvar
-    global cvar
-    cvar, _ = calculate_cvar(log_returns)
+    # global cvar
+    # cvar, _ = calculate_cvar(log_returns)
+    cvar = estimate_density_and_calculate_var_es(log_returns, params)
 
     # Compute the probability of having a return greater than 0.05
     global probability
@@ -165,6 +188,7 @@ def optimize_distribution(params, method, unconstraint=False):
 
     # Callback function to print the current CVaR and the current parameters
     def callback_function(x, *args):
+        cvar, var = calculate_cvar(log_returns)
         logging.info(f"Current initial_dist: {x} -> Sum: {np.sum(x)}")
         logging.info(f"Current probability: {probability}")
         try:
@@ -172,7 +196,7 @@ def optimize_distribution(params, method, unconstraint=False):
         except:
             pass
         logging.info(f'Mean loss: {np.mean(-log_returns)}')
-        logging.info(f"Current VaR:{np.quantile(-log_returns, params['alpha'])}")
+        logging.info(f"Current VaR:{var}")
         logging.info(f"Current CVaR: {cvar}\n")
     
     def callback_lambda_update(x, *args):
@@ -202,12 +226,12 @@ def optimize_distribution(params, method, unconstraint=False):
     # Optimization procedure
     logging.info("Starting...")
     if unconstraint == False:
-        logging.info(f"Minimization of vanilla cVaR")
+        logging.info(f"Minimization of vanilla cVaR using KDE")
         logging.info(f"Optimization method: {method}")
         result = minimize(portfolio_evolution, initial_guess, args=(amm_instance, params),
                 method=method, bounds=bounds_initial_dist, constraints=constraints, options=options, callback=callback_function)
     else:
-        logging.info(f"Unconstrained minimization of vanilla cVaR")
+        logging.info(f"Unconstrained minimization of vanilla cVaR using KDE")
         logging.info(f"Optimization method: {method}")
         global lambda1
         lambda1 = 10
@@ -246,6 +270,10 @@ def simulation_plots(res, params):
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
     cvar, var = calculate_cvar(log_returns)
 
+    # Evaluate the KDE of the returns
+    kde = gaussian_kde(log_returns)
+    x = np.linspace(np.min(log_returns), np.max(log_returns), 1000)
+
     fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
     i = np.random.randint(0, params['N_pools'])
     # Plot the evolution of the reserves
@@ -265,7 +293,8 @@ def simulation_plots(res, params):
 
     # Plot the distribution of the returns
     plt.figure(figsize=(10, 8), tight_layout=True)
-    plt.hist(log_returns, bins=50, alpha=0.7)
+    plt.hist(log_returns, bins=50, alpha=0.7, density=True)
+    plt.plot(x, kde.evaluate(x), alpha=0.7, label='KDE')
     plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
     plt.axvline(-var, color='b', linestyle='dashed', linewidth=1, label='VaR')
     plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$', alpha=0.0)
