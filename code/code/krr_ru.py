@@ -9,21 +9,32 @@ hp = {'kernel': 'additive_chi2', 'alpha': 0.01, 'n_points':32}
 
 import time
 import pickle
+import datetime
 import numpy as np
-from amm import amm
+from amm_cython import amm
+# from amm_old import amm
 from params import params
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from sklearn.metrics import r2_score
 from sklearn.kernel_ridge import KernelRidge
-from utils import calculate_cvar, calculate_log_returns, constraint_1, portfolio_evolution
+from utils import calculate_log_returns, constraint_1, portfolio_evolution, calculate_cvar, simulation_plots
 
 # Ignore future warnings
 import warnings
 warnings.simplefilter(action='ignore')
+print(f'Start: {datetime.datetime.now()}')
 
 DATA_FOLDER = '../'
+# Select Hyperparameters
+hp = {'kernel': 'additive_chi2', 'alpha': 0.01, 'n_points':10}
+
+# Load the random numbers used in the simulation
+N_list = np.load('output/random_numbers/N_list.npy')
+event_type_list = np.load('output/random_numbers/event_type_list.npy')
+event_direction_list = np.load('output/random_numbers/event_direction_list.npy')
+v_list = np.load('output/random_numbers/v_random_number_list.npy')
 
 def target_4_opt(theta, params, ret_inf=False, full_output=True):
     '''
@@ -39,8 +50,7 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
             Otherwise, the result is either np.nan or np.inf, according to ret_inf
         - constraint = E[ r>zeta ] - 0.7
     '''
-    np.random.seed(params['seed']) #Fix the seed for the next operations
-
+    np.random.seed(params['seed'])
     #Initialize the pools
     Rx0 = params['Rx0']
     Ry0 = params['Ry0']
@@ -55,10 +65,14 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
     # Simulate 1000 paths of trading in the pools
     end_pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t =\
         pools.simulate(
-            kappa=params['kappa'],
-            p=params['p'],
-            sigma=params['sigma'],
+            kappa=np.array(params['kappa']),
+            p=np.array(params['p']),
+            sigma=np.array(params['sigma']),
             T=params['T'],
+            N_list=N_list,
+            event_type_list=event_type_list,
+            event_direction_list=event_direction_list,
+            v_list=v_list,
             batch_size=params['batch_size'])
     # Compute the log returns
     log_ret = calculate_log_returns(xs_0, end_pools, l)
@@ -109,9 +123,11 @@ bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
 # Select the points
 x_data = np.array(x_data)
 y_data = np.array(y_data)
+
 # Fit the model
 krr = KernelRidge_Warper(hp)
 krr.fit(x_data, y_data)
+
 # Find the minimum and save it
 result = minimize(lambda x: krr.predict(x), np.array([1/6]*6),
                 method='SLSQP', bounds=bounds_initial_dist,
@@ -120,6 +136,7 @@ print('Finished the first part of the optimization')
 print('The starting point for the second step is:', result.x)
 print('Loss function approximated:', result.fun)
 print('Loss function real:', target_4_opt(result.x, params)[1])
+
 
 # Then, minimize the actual loss function
 np.random.seed(params['seed'])
@@ -136,4 +153,7 @@ result = minimize(portfolio_evolution, result.x, args=(amm_instance, params),
                   method='SLSQP', bounds=bounds_initial_dist,
                   constraints=constraints, tol=1e-6, options=options)
 print(result)
-target_4_opt(result.x, params)
+print(target_4_opt(result.x, params))
+print(f'End: {datetime.datetime.now()}')
+
+simulation_plots(result.x, params)
