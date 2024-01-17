@@ -3,7 +3,6 @@ import time
 import datetime
 import warnings
 import numpy as np
-from amm_cython import amm_cython
 from amm import amm
 from params import params
 from scipy.optimize import minimize
@@ -99,4 +98,4 @@ print(portfolio_evolution(result.x, random_numbers, params))
 print(f'Total time needed {time.time() - start_time0:.2f} seconds')
 print(f'End: {datetime.datetime.now()}')
 
-# simulation_plots(result.x, params)
+simulation_plots(result.x, random_numbers, params)

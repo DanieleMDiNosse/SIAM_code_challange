@@ -173,3 +173,6 @@ code/code/output/*
 
 # every png file
 *.png
+
+# .npy files
+*.npy

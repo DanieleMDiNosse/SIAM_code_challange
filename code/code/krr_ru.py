@@ -64,7 +64,7 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
 
     # Simulate 1000 paths of trading in the pools
     end_pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t =\
-        pools.simulate(
+        pools.simulate_fast(
             kappa=np.array(params['kappa']),
             p=np.array(params['p']),
             sigma=np.array(params['sigma']),

@@ -227,7 +227,7 @@ def optimize_distribution(params, method, unconstraint=False):
 
     return result.x
 
-def simulation_plots(res, params):
+def simulation_plots(res, random_numbers, params):
     """
     Plots the evolution of the reserves, the price and the returns for a given
     initial distribution of wealth across pools.
@@ -247,8 +247,15 @@ def simulation_plots(res, params):
     # the i-th path you need to do final_pools_dist[i].Rx. Same for Ry.
     np.random.seed(params['seed'])
 
-    XT, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate(
-        kappa=params['kappa'], p=params['p'], sigma=params['sigma'], T=params['T'], batch_size=params['batch_size'])
+    XT, Rx_t, Ry_t, v_t, event_type_t, event_direction_t = amm_instance.simulate_fast(kappa=np.array(params['kappa']),
+            p=np.array(params['p']),
+            sigma=np.array(params['sigma']),
+            T=params['T'],
+            N_list=random_numbers['N_list'],
+            event_type_list=random_numbers['event_type_list'],
+            event_direction_list=random_numbers['event_direction_list'],
+            v_list=random_numbers['v_random_number_list'],
+            batch_size=params['batch_size'])
 
     # Calculate the log returns, cvar and var
     log_returns = calculate_log_returns(X0, XT, l)
