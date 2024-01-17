@@ -162,12 +162,19 @@ cython_debug/
 # sh files
 *.sh
 
-# png
+
+# every file with .sh.e<number> in the name
+*.sh.e[0-9]*
+
+# every file with .sh.o<number> in the name
+*.sh.o[0-9]*
+
+# every file in the output folder
+code/code/output/*
+
+# every png file
 *.png
 
-# files in output folder
-output/*
-
-# output folder
-output
+# .npy files
+*.npy
 
