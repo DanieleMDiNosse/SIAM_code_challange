@@ -28,7 +28,6 @@ def target_4_opt(theta, params, ret_inf=False, full_output=True):
         - constraint = E[ r>zeta ] - 0.7
     '''
     np.random.seed(params['seed']) #Fix the seed for the next operations
-
     #Initialize the pools
     Rx0 = params['Rx0']
     Ry0 = params['Ry0']
@@ -73,7 +72,6 @@ if __name__ == '__main__':
         if c % 100 == 0:
             logging.info(f'Iteration {c}')
         c += 1
-
         np.random.seed(rgs_seed)
 
         #Randomly draw the vector of weights theta and refularize it to have sum=1
@@ -81,7 +79,7 @@ if __name__ == '__main__':
         for _ in range(len(params['Rx0'])):
             theta.append( np.random.uniform() )
         theta = np.array(theta) / np.sum(theta)
-
+   
         save_points.append(theta)
         con, cvar = target_4_opt(theta, params, ret_inf=False)
         save_cvar.append( cvar )
@@ -103,4 +101,3 @@ if __name__ == '__main__':
     best = np.argmin(save_cvar)
     logging.info(f'Best result: {save_points[best]}')
     logging.info(f'CVaR: {save_cvar[best]}')
-

@@ -49,7 +49,7 @@ def calculate_cvar(log_returns):
     """
     Calculate the CVaR of a set of returns.
     """
-
+    global params
     var = np.quantile(-log_returns, params['alpha'])
     cvar = np.mean(-log_returns[-log_returns >= var])
     return cvar, var
@@ -226,6 +226,7 @@ def optimize_distribution(params, method, unconstraint=False):
     logging.info(f"Results:\n\t{result}")
 
     return result.x
+
 
 def simulation_plots(res, random_numbers, params):
     """
