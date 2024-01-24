@@ -213,18 +213,20 @@ def simulation_plots(res, random_numbers, params):
     ax[2].plot(np.array(Rx_t[i])/np.array(Ry_t[i]))
     ax[2].set_xlabel('Time')
     ax[2].set_ylabel('Marginal Price')
-    plt.savefig(f'output/pools.png')
+    plt.savefig(f'outputs/pools.png')
 
     # Plot the distribution of the returns
     plt.figure(figsize=(10, 8), tight_layout=True)
     plt.hist(log_returns, bins=50, alpha=0.7, edgecolor='black')
-    plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1, label='CVaR')
-    plt.axvline(-var, color='b', linestyle='dashed', linewidth=1, label='VaR')
-    plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, label=r'$\xi$', alpha=0.0)
+    plt.axvline(-cvar, color='r', linestyle='dashed', linewidth=1.5)
+    plt.axvline(-var, color='b', linestyle='dashed', linewidth=1.5)
+    # add transparent lines just to add element to the legend
+    plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, alpha=0.0)
+    plt.axvline(0.05, color='g', linestyle='dashed', linewidth=1, alpha=0.0)
     plt.xlabel('Time')
     plt.ylabel('Returns')
-    plt.legend([f'CVaR:{-cvar}', f'VaR:{-var}', fr'$E[r_T]$:{np.mean(log_returns):.3f}', fr'$P[r_T>\xi]$:{probability:.3f}'])
-    plt.savefig(f'output/returns.png')
+    plt.legend([f'CVaR:{-cvar*100:.3f}%', f'VaR:{-var*100:.3f}%', fr'$P[r_T>\xi]$:{probability*100:.3f}%', fr'$E[r_T]$:{np.mean(log_returns*100):.3f}%'])
+    plt.savefig(f'outputs/returns.png')
 
     plt.show()
 
