@@ -1,18 +1,3 @@
-'''This script contains functions that are used for the task 2 of the SIAM competition.
-The task required to find the distribution of initial wealth across n pools such that
-it minimize the conditional Value at Risk (CVaR) of the final wealth distribution subject
-to the constraint that the probability of having a return of more than 0.05 is greater
-than 0.7.
-
-Conceptually, the procedure is as follows:
-1. Choose an initial wealth distribution
-2. Simulate the evolution of the wealth distribution over time using the simulate
-module of the amm class. This module generates a certain number N of paths that are
-characterized by random events that result in a certain final wealth distribution.
-3. Calculate the CVaR of the final wealth distribution
-4. Check the constraint.
-'''
-
 import numpy as np
 from scipy.optimize import minimize
 import copy
