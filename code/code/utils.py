@@ -40,6 +40,8 @@ def calculate_cvar(log_returns):
     return cvar, var
 
 def cvar_unconstrained(cvar, initial_pools_dist, lambda1):
+    '''Uncosntrained minimization of the CVaR. The penalty term is added to the
+    objective function.'''
     lambda2, lambda3, lambda3 = 10*np.ones(3)
     global penalties
     penalties = lambda1 * (np.sum(initial_pools_dist) - 1)**2 + lambda2 * max(0, params['q'] - probability) + lambda3 * np.sum(np.maximum(-initial_pools_dist, 0))
