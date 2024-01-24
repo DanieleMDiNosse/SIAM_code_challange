@@ -90,10 +90,11 @@ result = minimize(portfolio_evolution, result.x, args=(random_numbers, params),
                   method='SLSQP', bounds=bounds_initial_dist,
                   constraints=constraints, tol=1e-6, options=options)
 print(f'Done in {time.time() - start_time:.2f} seconds')
-print(result)
-print(portfolio_evolution(result.x, random_numbers, params))
+print(f'The optimal initial portfolio;s weight vector is:\n{result.x}The corresponding cVaR is:\n{result.fun}')
 print(f'Total time needed {time.time() - start_time0:.2f} seconds')
-print(f'End: {datetime.datetime.now()}')
 
 # Plot the results
+print('Plotting the results...')
 simulation_plots(result.x, random_numbers, params)
+print('Plots saved in outputs/')
+print(f'End: {datetime.datetime.now()}')
