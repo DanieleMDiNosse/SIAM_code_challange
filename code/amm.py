@@ -258,7 +258,7 @@ class amm():
         # store all the arrays in a dictionary
         arrays_dict = {'N_list': N_list, 'event_type_list': event_type_list, 'event_direction_list': event_direction_list, 'v_random_number_list': v_list}
         # save the dictionary
-        # np.save('random_numbers.npy', arrays_dict)
+        # np.save('output/random_numbers.npy', arrays_dict)
 
         return arrays_dict
     
