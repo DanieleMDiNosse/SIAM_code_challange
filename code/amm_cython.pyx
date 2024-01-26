@@ -113,23 +113,11 @@ cdef class amm_cython:
         sum_kappa = np.sum(kappa)
         pi = kappa / sum_kappa
 
-        def make_list(int batch_size):
-            cdef list x
-            x = [None] * batch_size
-            return x
-
-        Rx_t = make_list(batch_size)
-        Ry_t = make_list(batch_size)       
-        v_t = make_list(batch_size)
-        event_type_t = make_list(batch_size)
-        event_direction_t = make_list(batch_size)
-        pools = make_list(batch_size)
+        pools = [None] * batch_size
 
         for k in range(batch_size):
             N = N_list[k]
 
-            Rx = np.zeros((N, len(self.Rx)))
-            Ry = np.zeros((N, len(self.Rx)))
             v = np.zeros((N, len(self.Rx)))
             event_type = np.zeros(N, dtype=int)
             event_direction = np.zeros(N, dtype=int)
@@ -160,14 +148,5 @@ cdef class amm_cython:
                     pools[k].swap_x_to_y(v[j, :])
                 else:
                     pools[k].swap_y_to_x(v[j, :])
-                
-                Rx[j, :] = 1 * pools[k].Rx
-                Ry[j, :] = 1 * pools[k].Ry
 
-            Rx_t[k] = Rx
-            Ry_t[k] = Ry
-            v_t[k] = v
-            event_type_t[k] = event_type
-            event_direction_t[k] = event_direction
-
-        return pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t
+        return pools

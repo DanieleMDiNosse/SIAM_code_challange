@@ -1,12 +1,9 @@
 import numpy as np
-from scipy.optimize import minimize
-import copy
 import matplotlib.pyplot as plt
 from amm_cython import amm_cython
 from amm import amm
 from params import params
 import logging
-import os
 
 class KernelRidge_Warper():
     '''Warper class for the KernelRidge class of sklearn.'''
@@ -121,10 +118,10 @@ def portfolio_evolution(initial_pools_dist, random_numbers, params):
     # Simulate the evolution of the pools (scenario simulation).
     np.random.seed(params['seed'])
 
-    final_pools_dists, _, _, _, _, _ = amm_instance.simulate(
-            kappa=np.array(params['kappa']),
-            p=np.array(params['p']),
-            sigma=np.array(params['sigma']),
+    final_pools_dists = amm_instance.simulate(
+            kappa=np.array(params['kappa'], dtype=np.double),
+            p=np.array(params['p'], dtype=np.double),
+            sigma=np.array(params['sigma'], dtype=np.double),
             T=params['T'],
             N_list=random_numbers['N_list'],
             event_type_list=random_numbers['event_type_list'],
@@ -198,6 +195,7 @@ def simulation_plots(res, random_numbers, params):
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
     cvar, var = calculate_cvar(log_returns)
 
+    plt.style.use('seaborn')
     fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
     i = np.random.randint(0, params['N_pools'])
     # Plot the evolution of the reserves
