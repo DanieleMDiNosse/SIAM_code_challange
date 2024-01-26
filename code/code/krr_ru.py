@@ -9,6 +9,7 @@ hp = {'kernel': 'additive_chi2', 'alpha': 0.01, 'n_points':32}
 
 import time
 import pickle
+import logging
 import numpy as np
 from amm import amm
 from params import params
@@ -17,14 +18,17 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from sklearn.metrics import r2_score
 from sklearn.kernel_ridge import KernelRidge
-from utils import calculate_cvar, calculate_log_returns, constraint_1, portfolio_evolution
+from utils import *
+
+_ = logging_config('opt')
+get_current_git_branch()
 
 # Ignore future warnings
 import warnings
 warnings.simplefilter(action='ignore')
 
 DATA_FOLDER = '../'
-
+hp = {'kernel': 'additive_chi2', 'alpha': 0.01, 'n_points':10}
 def target_4_opt(theta, params, ret_inf=False, full_output=True):
     '''
     Target function for the optimization.
@@ -116,10 +120,10 @@ krr.fit(x_data, y_data)
 result = minimize(lambda x: krr.predict(x), np.array([1/6]*6),
                 method='SLSQP', bounds=bounds_initial_dist,
                 constraints=constraints, options=options, tol=1e-8)
-print('Finished the first part of the optimization')
-print('The starting point for the second step is:', result.x)
-print('Loss function approximated:', result.fun)
-print('Loss function real:', target_4_opt(result.x, params)[1])
+logging.info('Finished the first part of the optimization')
+logging.info(f'The starting point for the second step is: {result.x}')
+logging.info(f'Loss function approximated: {result.fun}')
+logging.info(f'Loss function real: {target_4_opt(result.x, params)[1]}')
 
 # Then, minimize the actual loss function
 np.random.seed(params['seed'])
@@ -131,9 +135,13 @@ log_returns, probability = 0, 0
 amm_instance = amm(params['Rx0'], params['Ry0'], params['phi'])
 
 options = {'maxiter': 1000, 'ftol': 1e-6}
-# Optimization procedure
-result = minimize(portfolio_evolution, result.x, args=(amm_instance, params),
+cvar_list = []
+for i in range(10):
+    np.random.seed(i)
+    result = minimize(portfolio_evolution, result.x, args=(amm_instance, params),
                   method='SLSQP', bounds=bounds_initial_dist,
                   constraints=constraints, tol=1e-6, options=options)
-print(result)
-target_4_opt(result.x, params)
+    # logging.info(result)
+    res = target_4_opt(result.x, params)[1]
+    logging.info(f'{res}')
+    cvar_list.append(res)
