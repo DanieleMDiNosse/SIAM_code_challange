@@ -7,6 +7,7 @@ Created on Fri Nov  21 17:26:27 2023
 import numpy as np
 from collections import deque
 import copy
+import time
 
 from tqdm import tqdm
 
@@ -161,6 +162,8 @@ class amm():
         theta = 1 + (2 - self.phi)*self.Rx*(1 - np.sqrt(
             1+4*x*(1-self.phi)/(self.Rx*(2-self.phi)**2)
             )) / ( 2*(1 - self.phi)*x )
+        #print(theta)
+        assert not np.isnan(theta).any(), 'Received NaN from theta'
 
         return self.mint(x*theta, self.swap_x_to_y(x*(1-theta), quote=False))
     
@@ -223,7 +226,42 @@ class amm():
         self.l -= l
         
         return x, y
+    
+    def save_random_numbers(self, kappa, T, batch_size=256):
+        N_list, event_type_list, event_direction_list, v_list = [], [], [], []
+        # used for generating Poisson random variables for all events
+        sum_kappa = np.sum(kappa)
+        # used for thinning the Poisson process
+        pi = kappa/sum_kappa
 
+        for k in range(batch_size):
+            N = np.random.poisson(lam = sum_kappa*T)
+            N_list.append(N)
+            
+            for j in range(N):
+                event_type0 = np.random.choice(len(kappa), p=pi)
+                event_type_list.append(event_type0)
+
+                event_direction0 = np.random.rand()
+                event_direction_list.append(event_direction0)
+
+                if event_type0 == 0:
+                    # there is a swap across all venues
+                    random_number0 = np.random.randn()
+                    v_list.append(random_number0)
+                else:
+                    random_number0 = np.random.randn()
+                    v_list.append(random_number0)
+
+        N_list, event_type_list, event_direction_list, v_list = np.array(N_list), np.array(event_type_list), np.array(event_direction_list), np.array(v_list)
+
+        # store all the arrays in a dictionary
+        arrays_dict = {'N_list': N_list, 'event_type_list': event_type_list, 'event_direction_list': event_direction_list, 'v_random_number_list': v_list}
+        # save the dictionary
+        # np.save('random_numbers.npy', arrays_dict)
+
+        return arrays_dict
+    
     def simulate(self, kappa, p, sigma, T=1, batch_size=256):
         """
         Simulate trajectories of all AMM pools simultanesouly.
@@ -289,7 +327,7 @@ class amm():
         event_direction_t = make_list(batch_size)
         pools = make_list(batch_size)
 
-        for k in range(batch_size):
+        for k in tqdm(range(batch_size)):
 
             N = np.random.poisson(lam = sum_kappa*T)
 
@@ -331,6 +369,133 @@ class amm():
                 else:
                     pools[k].swap_y_to_x(v[j,:]) # submit Y and get X
 
+                Rx[j,:] = 1*pools[k].Rx
+                Ry[j,:] = 1*pools[k].Ry
+
+            Rx_t[k] = Rx
+            Ry_t[k] = Ry
+            v_t[k] = v
+            event_type_t[k] = event_type
+            event_direction_t[k] = event_direction
+
+        return pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t
+    
+    def simulate_fast(self, kappa, p, sigma, T, N_list, event_type_list, event_direction_list, v_list,  batch_size=256):
+        """
+        This is an modified version of the simulate module that relies on previously generated random numbers
+        via the save_random_numbers module. This has been done due to the problems arising with the use of
+        cython. Specifically, it is hard (if not impossible) to synchronize the numpy random number generator
+        between python and cython.
+
+        Parameters
+        ----------
+        kappa : array (K+1,)
+            rate of arrival of swap events X->Y and Y->X.
+            kappa[0,:] is for a common event across all pools
+        p : array (K+1,2)
+            probability of swap X to Y event conditional on an event arriving.
+            p[0,:] is for a common event across all pools
+        sigma : array (K+1,2)
+            standard deviation of log volume of swap events.
+            sigma[0,:] is for a common event across all pools
+        N_list : array (batch_size,)
+            This is a list containing all the poisson random numbers.
+        event_type_list : array 
+            This is a list containing all the event types. The number of elements
+            depends on the random numbers stored in N_list.
+        event_direction_list : array
+            This is a list containing all the random numbers used for the computation
+            of event directions. The number of elements depends on the random numbers stored in N_list.
+        v_list : array
+            This is a list containing all the random numbers used for the computation
+            of the swap volumes. The number of elements depends on the random numbers stored in N_list.
+        T : float, optional: default is 1.
+            The amount of (calendar) time to simulate over
+        batch_size : int, optional, default is 256.
+            the number of paths to generate.
+
+        Returns
+        -------
+        pools : deque, len=batch_size
+            Each element of the list is the pool state at the end of the simulation for that scenario
+        Rx_t : deque, len= batch_size
+            Each element of the list contains a sequence of arrays.
+            Each array shows the reserves in token-X for all AMM pools after each transaction.
+        Ry_t : deque, len=batch_size
+            Each element of the list contains a sequence of arrays.
+            Each array shows the reserves in token-Y for all AMM pools after each transaction.
+        v_t : deque, len=batch_size
+            Each element of the list contains a sequence of arrays.
+            Each array shows the volumes of the transaction sent to the various AMM pools -- the transaction is
+            either a swap X for Y or swap Y for X for a single pool, or across all pools at once
+        event_type_t : deque, len=batch_size
+            Each element of the list contains a sequence of arrays.
+            Each array shows the event type. event_type=0 if it is a swap sent to all pools simultaneously,
+            otherwise, the swap was sent to pool event_type
+        event_direction_t : deque, len=batch_size
+            Each element of the list contains a sequence of arrays.
+            Each array shows the directi of the swap.
+            event_direction=0 if swap X -> Y
+            event_direction=1 if swap Y -> X
+
+        """
+        # used for generating Poisson random variables for all events
+        sum_kappa = np.sum(kappa)
+        # used for thinning the Poisson process
+        pi = kappa/sum_kappa
+
+        # store the list of reservese generated by the simulation
+        def make_list(batch_size):
+        #   x = deque(maxlen=batch_size)
+          x = [None] * batch_size
+          return x
+
+        Rx_t = make_list(batch_size)
+        Ry_t = make_list(batch_size)       
+        v_t = make_list(batch_size)
+        event_type_t = make_list(batch_size)
+        event_direction_t = make_list(batch_size)
+        pools = make_list(batch_size)
+
+        
+        for k in range(batch_size):
+            N = N_list[k]
+            
+            Rx = np.zeros((N,len(self.Rx)))
+            Ry = np.zeros((N,len(self.Rx)))
+            v = np.zeros((N,len(self.Rx)))
+            event_type = np.zeros(N, int)
+            event_direction = np.zeros(N, int)
+
+            pools[k] = copy.deepcopy(self)
+            
+            for j in range(N):
+                if k == 0:
+                    idx = 0
+                else:
+                    idx = N_list[:k].sum()
+                event_type[j] = event_type_list[idx + j]
+                event_direction[j] = int(event_direction_list[idx + j] < p[event_type[j]])
+
+                if event_direction[j] == 0:
+                    mu = np.zeros(len(pools[k].Rx)) # deposit X and get Y
+                else:
+                    mu = np.log(pools[k].Ry/pools[k].Rx) # deposit Y and get X
+                if event_type[j] == 0:
+                    # there is a swap across all venues
+                    random_number = v_list[idx + j]
+                    v[j,:] = np.exp((mu-0.5*sigma[0]**2) + sigma[0]*random_number)
+                else:
+                    # there is a swap only on a specific venue
+                    v[j,:] = np.zeros(len(pools[k].Rx))
+                    mu = mu[event_type[j]-1]
+                    random_number = v_list[idx + j]
+                    v[j,event_type[j]-1] = np.exp((mu-0.5*sigma[event_type[j]]**2) \
+                                                   + sigma[event_type[j]]*random_number)
+                if event_direction[j] == 0:
+                    pools[k].swap_x_to_y(v[j,:]) # submit X and get Y
+                else:
+                    pools[k].swap_y_to_x(v[j,:]) # submit Y and get X
                 Rx[j,:] = 1*pools[k].Rx
                 Ry[j,:] = 1*pools[k].Ry
 

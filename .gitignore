@@ -162,6 +162,7 @@ cython_debug/
 # sh files
 *.sh
 
+
 # every file with .sh.e<number> in the name
 *.sh.e[0-9]*
 
@@ -173,3 +174,7 @@ code/code/output/*
 
 # every png file
 *.png
+
+# .npy files
+*.npy
+
