@@ -2,7 +2,7 @@
 This repository contains the code used for the SIAG/FME Code Quest 2023.
 
 # Usage
-The code is intended to run on Google Colab without any kind of supplemental code installation.
+The code is intended to run on Google Colab without any kind of supplemental package installation.
 Simply run the main.py file
 ```bash
 !python main.py
