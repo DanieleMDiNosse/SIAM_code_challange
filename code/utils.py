@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from amm_cython import amm_cython
 from amm import amm
 from params import params
+import os
 import logging
 
 class KernelRidge_Warper():
@@ -194,6 +195,11 @@ def simulation_plots(res, random_numbers, params):
     log_returns = calculate_log_returns(X0, XT, l)
     probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
     cvar, var = calculate_cvar(log_returns)
+
+    # Check if the outputs folder exists
+    if not os.path.exists('outputs'):
+        os.makedirs('outputs')
+    
 
     plt.style.use('seaborn')
     fig, ax = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
