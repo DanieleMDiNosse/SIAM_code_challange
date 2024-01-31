@@ -5,7 +5,7 @@ This repository contains the code used for the SIAG/FME Code Quest 2023.
 The code is intended to run on Google Colab without any kind of supplemental package installation.
 Simply run the main.py file
 ```bash
-!python main.py
+!python code/main.py
 ```
 
 ## Note
@@ -14,7 +14,7 @@ The code relies on the compiled cython files (such as amm_cython.c and amm_cytho
 These files can no longer work in case of a Cython module upgrade in Colab. If there is any problem, it is better to
 recompile them on Google Colab using
  ```bash
-!python setup.py build_ext --inplace
+!python code/setup.py build_ext --inplace
 ```
 
 
