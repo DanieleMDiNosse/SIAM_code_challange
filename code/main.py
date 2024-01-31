@@ -69,7 +69,7 @@ hp = {'kernel': 'additive_chi2', 'alpha': 0.01}
 # Fit the model
 krr = KernelRidge_Warper(hp)
 krr.fit(x_data, y_data)
-size=params['N_pools'])
+
 # Find the minimum
 initial_guess = np.random.uniform(size=params['N_pools'])
 initial_guess = initial_guess / np.sum(initial_guess)
