@@ -7,7 +7,7 @@ from amm import amm
 from params import params
 from scipy.optimize import minimize
 import multiprocessing
-from utils import portfolio_evolution, simulation_plots, worker, KernelRidge_Warper
+from utils import portfolio_evolution, simulation_plots, worker, KernelRidge_Warper, var
 
 warnings.simplefilter(action='ignore')
 
@@ -76,6 +76,7 @@ initial_guess = initial_guess / np.sum(initial_guess)
 result = minimize(lambda x: krr.predict(x), initial_guess,
                 method='SLSQP', bounds=bounds_initial_dist,
                 constraints=constraints, options=options, tol=1e-8)
+print(result)
 print(f'Done in {time.time() - start_time:.2f} seconds')
 print('The starting point for the second step is:', result.x)
 print('Loss function approximated:', result.fun)
@@ -93,7 +94,10 @@ result = minimize(portfolio_evolution, result.x, args=(random_numbers, params),
                   constraints=constraints, tol=1e-6, options=options)
 print(f'Done in {time.time() - start_time:.2f} seconds')
 print(f'The optimal initial portfolio;s weight vector is:\n\t{result.x}\nThe corresponding cVaR is:\n\t{result.fun}')
+v = var(result.x, random_numbers, params)
+print(v)
 print(f'Total time needed {time.time() - start_time0:.2f} seconds')
+print(result)
 
 # Plot the results
 print('Plotting the results...')

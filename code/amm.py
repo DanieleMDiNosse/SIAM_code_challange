@@ -227,7 +227,24 @@ class amm():
         
         return x, y
     
-    def save_random_numbers(self, kappa, T, batch_size=256):
+    def save_random_numbers(self, kappa, T, batch_size):
+        '''This method generates all the random numbers needed for the simulation.
+        
+        Parameters
+        ----------
+        kappa : array (K+1,)
+            rate of arrival of swap events X->Y and Y->X.
+            kappa[0,:] is for a common event across all pools
+        T : float.
+            The amount of (calendar) time to simulate over
+        batch_size : int.
+            the number of paths to generate.
+            
+        Returns
+        -------
+        arrays_dict : dictionary
+            This dictionary contains all the random numbers needed for the simulation.'''
+
         N_list, event_type_list, event_direction_list, v_list = [], [], [], []
         # used for generating Poisson random variables for all events
         sum_kappa = np.sum(kappa)
@@ -255,10 +272,7 @@ class amm():
 
         N_list, event_type_list, event_direction_list, v_list = np.array(N_list), np.array(event_type_list), np.array(event_direction_list), np.array(v_list)
 
-        # store all the arrays in a dictionary
         arrays_dict = {'N_list': N_list, 'event_type_list': event_type_list, 'event_direction_list': event_direction_list, 'v_random_number_list': v_list}
-        # save the dictionary
-        # np.save('output/random_numbers.npy', arrays_dict)
 
         return arrays_dict
     
@@ -380,12 +394,10 @@ class amm():
 
         return pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t
     
-    def simulate_fast(self, kappa, p, sigma, T, N_list, event_type_list, event_direction_list, v_list,  batch_size=256):
+    def simulate_fast(self, kappa, p, sigma, T, N_list, event_type_list, event_direction_list, v_list,  batch_size):
         """
         This is an modified version of the simulate module that relies on previously generated random numbers
-        via the save_random_numbers module. This has been done due to the problems arising with the use of
-        cython. Specifically, it is hard (if not impossible) to synchronize the numpy random number generator
-        between python and cython.
+        via the save_random_numbers module.
 
         Parameters
         ----------
@@ -411,7 +423,7 @@ class amm():
             of the swap volumes. The number of elements depends on the random numbers stored in N_list.
         T : float, optional: default is 1.
             The amount of (calendar) time to simulate over
-        batch_size : int, optional, default is 256.
+        batch_size : int
             the number of paths to generate.
 
         Returns

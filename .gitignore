@@ -170,7 +170,7 @@ cython_debug/
 *.sh.o[0-9]*
 
 # every file in the output folder
-code/code/output/*
+code/output/*
 
 # every png file
 *.png

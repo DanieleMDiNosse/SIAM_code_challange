@@ -144,6 +144,71 @@ def portfolio_evolution(initial_pools_dist, random_numbers, params):
 
     return cvar
 
+def var(initial_pools_dist, random_numbers, params):
+    '''
+    Simulate the evolution of the pools and calculate the CVaR of the returns.
+    
+    Parameters
+    ----------
+    initial_pools_dist : array
+        Initial weight vector.
+    random_numbers : dict
+        Dictionary of random numbers.
+    params : dict
+        Dictionary of parameters.
+
+    Returns
+    -------
+    cvar : float
+        CVaR of the returns.
+    '''
+
+    # Initialize the pools
+    amm_instance = amm_cython(params['Rx0'], params['Ry0'], params['phi'])
+
+    # Check if there is a negative weight
+    if np.any(initial_pools_dist < 0):
+        logging.info(f'Negative weight: {initial_pools_dist}')
+        return 1e6
+
+    # Compute the actual wealth distribution across the pools.
+    X0 = params['x_0'] * initial_pools_dist
+
+    # Evaluate the number of LP tokens. This will be used to compute the returns.
+    try:
+        l = amm_instance.swap_and_mint(X0)
+    except AssertionError as e:
+        logging.info(f"Error: {e}")
+        return 1e6
+
+    # Simulate the evolution of the pools (scenario simulation).
+    np.random.seed(params['seed'])
+
+    final_pools_dists = amm_instance.simulate(
+            kappa=np.array(params['kappa'], dtype=np.double),
+            p=np.array(params['p'], dtype=np.double),
+            sigma=np.array(params['sigma'], dtype=np.double),
+            T=params['T'],
+            N_list=random_numbers['N_list'],
+            event_type_list=random_numbers['event_type_list'],
+            event_direction_list=random_numbers['event_direction_list'],
+            v_list=random_numbers['v_random_number_list'],
+            batch_size=params['batch_size'])
+
+    # Calculate the log returns for each path
+    global log_returns
+    log_returns = calculate_log_returns(X0, final_pools_dists, l)
+
+    # Compute the cvar
+    global cvar
+    cvar, var = calculate_cvar(log_returns)
+
+    # Compute the probability of having a return greater than 0.05
+    global probability
+    probability = log_returns[log_returns > 0.05].shape[0] / log_returns.shape[0]
+
+    return var
+
 def constraint_1(x):
     return np.sum(x) - 1
 
