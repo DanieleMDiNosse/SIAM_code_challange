@@ -35,7 +35,7 @@ x_data, y_data = list(), list()
 result_queue = multiprocessing.Queue()
 # Define the range for each process
 n_points_per_process = 5
-ranges = [(0, n_points_per_process), (n_points_per_process, 10)]
+ranges = [(0, n_points_per_process), (n_points_per_process, n_points_per_process*2)]
 
 # Create and start processes
 processes = []
@@ -55,7 +55,7 @@ while not result_queue.empty():
     y_data.extend(local_y)
 
 # Some variables for the optimization
-options = {'maxiter': 1000, 'ftol': 1e-8}
+options = {'maxiter': 1000, 'ftol': 1e-6}
 constraints = [{'type': 'eq', 'fun': lambda x: np.sum(x)-1}]
 bounds_initial_dist = [(1e-5, 1) for i in range(params['N_pools'])]
 
@@ -69,9 +69,11 @@ hp = {'kernel': 'additive_chi2', 'alpha': 0.01}
 # Fit the model
 krr = KernelRidge_Warper(hp)
 krr.fit(x_data, y_data)
-
+size=params['N_pools'])
 # Find the minimum
-result = minimize(lambda x: krr.predict(x), np.array([1/6]*6),
+initial_guess = np.random.uniform(size=params['N_pools'])
+initial_guess = initial_guess / np.sum(initial_guess)
+result = minimize(lambda x: krr.predict(x), initial_guess,
                 method='SLSQP', bounds=bounds_initial_dist,
                 constraints=constraints, options=options, tol=1e-8)
 print(f'Done in {time.time() - start_time:.2f} seconds')
